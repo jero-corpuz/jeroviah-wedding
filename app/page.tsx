@@ -1,69 +1,255 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import React, { useEffect, useState, useCallback } from "react";
+import SkyCanvas from "@/components/canvas/SkyCanvas";
+import FloorCanvas from "@/components/canvas/FloorCanvas";
+import BrawlerHud from "@/components/hud/BrawlerHud";
+import FloorHudControls from "@/components/hud/FloorHudControls";
+
+import Stage0Title from "@/components/stages/Stage0Title";
+import Stage1Select from "@/components/stages/Stage1Select";
+import Stage2DressCode from "@/components/stages/Stage2DressCode";
+import Stage3Entourage from "@/components/stages/Stage3Entourage";
+import Stage4Church from "@/components/stages/Stage4Church";
+import Stage5Venue from "@/components/stages/Stage5Venue";
+import Stage6Gallery from "@/components/stages/Stage6Gallery";
+import Stage7Rsvp from "@/components/stages/Stage7Rsvp";
+
+import MapModal from "@/components/modals/MapModal";
+import ComicModal from "@/components/modals/ComicModal";
+import GalleryLightboxModal from "@/components/modals/GalleryLightboxModal";
+import RsvpSuccessModal from "@/components/modals/RsvpSuccessModal";
+
+import { gameState } from "@/lib/arcade/state";
+import { initArcade, destroyArcade } from "@/lib/arcade/engine";
+import { playSfx } from "@/lib/arcade/audio";
+import { addBrawlerScore } from "@/lib/arcade/score";
+import { PartyMember, GalleryItem } from "@/lib/arcade/types";
+
+const GALLERY_LIKES_STORAGE_KEY = "jero_viah_gallery_likes_v1";
+
+export default function WeddingPage() {
+  const [mapModalOpen, setMapModalOpen] = useState(false);
+  const [comicModalOpen, setComicModalOpen] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [rsvpSuccessOpen, setRsvpSuccessOpen] = useState(false);
+  const [rsvpSummary, setRsvpSummary] = useState("");
+
+  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>(() => [...gameState.galleryItems]);
+  const [crtMode, setCrtMode] = useState<boolean>(true);
+  const [partyRoster, setPartyRoster] = useState<PartyMember[]>(() => [...gameState.partyRoster]);
+
+  useEffect(() => {
+    initArcade();
+    return () => {
+      destroyArcade();
+    };
+  }, []);
+
+  useEffect(() => {
+    const loadSavedLikes = () => {
+      try {
+        const raw = window.localStorage.getItem(GALLERY_LIKES_STORAGE_KEY);
+        if (!raw) return;
+        const saved: Record<string, number> = JSON.parse(raw);
+        if (!saved || typeof saved !== "object") return;
+        setGalleryItems((prev) => {
+          const next = prev.map((item) => {
+            const count = saved[String(item.id)];
+            return typeof count === "number" && count >= 0
+              ? { ...item, likes: count }
+              : item;
+          });
+          gameState.galleryItems = next;
+          return next;
+        });
+      } catch {
+        // Ignore localStorage read/parse errors
+      }
+    };
+
+    const raf = window.requestAnimationFrame(loadSavedLikes);
+    window.addEventListener("storage", loadSavedLikes);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("storage", loadSavedLikes);
+    };
+  }, []);
+
+  const handleToggleCrt = useCallback(() => {
+    playSfx("blip");
+    setCrtMode((prev) => !prev);
+  }, []);
+
+  const handleLikeItem = useCallback((id: number) => {
+    playSfx("coin");
+    addBrawlerScore(50, 100);
+    setGalleryItems((prev) => {
+      const next = prev.map((item) =>
+        item.id === id ? { ...item, likes: item.likes + 1 } : item
+      );
+      gameState.galleryItems = next;
+      try {
+        const likesMap: Record<string, number> = {};
+        for (const item of next) {
+          if (item.likes > 0) {
+            likesMap[String(item.id)] = item.likes;
+          }
+        }
+        window.localStorage.setItem(
+          GALLERY_LIKES_STORAGE_KEY,
+          JSON.stringify(likesMap)
+        );
+      } catch {
+        // Ignore localStorage write errors
+      }
+      return next;
+    });
+  }, []);
+
+  const handleOpenLightbox = useCallback((index: number) => {
+    playSfx("blip");
+    setLightboxIndex(index);
+    setLightboxOpen(true);
+  }, []);
+
+  const handleStepLightbox = useCallback((delta: number) => {
+    playSfx("blip");
+    setLightboxIndex((prev) => (prev + delta + galleryItems.length) % galleryItems.length);
+  }, [galleryItems.length]);
+
+  const handleLikeCurrent = useCallback(() => {
+    const current = galleryItems[lightboxIndex];
+    if (current) {
+      handleLikeItem(current.id);
+    }
+  }, [galleryItems, lightboxIndex, handleLikeItem]);
+
+  const handleRsvpSuccess = useCallback((newMember: PartyMember) => {
+    setPartyRoster((prev) => [newMember, ...prev.map((p) => ({ ...p, isNew: false }))]);
+    gameState.partyRoster = [newMember, ...gameState.partyRoster.map((p) => ({ ...p, isNew: false }))];
+
+    const status =
+      newMember.attendance === "regrets"
+        ? "cheering from afar"
+        : "locked in for Feb 12, 2027";
+    const guestsNote =
+      newMember.addedGuests && newMember.addedGuests.length > 0
+        ? ` — taking ${newMember.addedGuests.join(", ")}`
+        : "";
+    setRsvpSummary(
+      `${newMember.name} (${newMember.party} • ${newMember.clan}) is ${status}${guestsNote}!`
+    );
+    setRsvpSuccessOpen(true);
+  }, []);
+
+  // Expose global window hooks so keyboard listeners and existing click events can trigger modals seamlessly
+  useEffect(() => {
+    const w = window as unknown as Record<string, unknown>;
+    w.openMapModal = () => setMapModalOpen(true);
+    w.closeMapModal = () => setMapModalOpen(false);
+    w.openComicModal = () => setComicModalOpen(true);
+    w.closeComicModal = () => setComicModalOpen(false);
+    w.openGalleryLightbox = (idx: number) => {
+      setLightboxIndex(idx);
+      setLightboxOpen(true);
+    };
+    w.closeGalleryLightbox = () => setLightboxOpen(false);
+    w.stepLightbox = (delta: number) => handleStepLightbox(delta);
+    w.likeCurrentLightboxMemory = () => handleLikeCurrent();
+    w.closeRsvpModal = () => setRsvpSuccessOpen(false);
+
+    return () => {
+      delete w.openMapModal;
+      delete w.closeMapModal;
+      delete w.openComicModal;
+      delete w.closeComicModal;
+      delete w.openGalleryLightbox;
+      delete w.closeGalleryLightbox;
+      delete w.stepLightbox;
+      delete w.likeCurrentLightboxMemory;
+      delete w.closeRsvpModal;
+    };
+  }, [handleStepLightbox, handleLikeCurrent]);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+    <>
+      {/* 1. DYNAMIC SKY CANVAS & 2.5D GROUND PLANE */}
+      <SkyCanvas />
+
+      {/* 2. AUTHENTIC ARCADE BEAT-'EM-UP TOP HUD */}
+      <BrawlerHud />
+
+      {/* 3. OPEN-AIR HORIZONTAL 8-STAGE WORLD */}
+      <main id="world-viewport">
+        <div id="world-track">
+          {/* STAGE 0: FULL-SCREEN STREET FIGHTER (1987) TITLE SCREEN */}
+          <Stage0Title />
+
+          {/* STAGE 1: FULL-SCREEN STREET FIGHTER II "PLAYER SELECT" SCREEN */}
+          <Stage1Select onOpenComicModal={() => setComicModalOpen(true)} />
+
+          {/* STAGE 2 (11:00 AM CITY): SHOPPING DISTRICT — WEDDING MOTIF & DRESS CODE */}
+          <Stage2DressCode />
+
+          {/* STAGE 3 (12:30 PM): ENTOURAGE STADIUM — CROWD WAVE */}
+          <Stage3Entourage />
+
+          {/* STAGE 4 (02:00 PM): ST. ALOYSIUS GONZAGA PARISH CHURCH */}
+          <Stage4Church />
+
+          {/* STAGE 5 (05:15 PM BAGUIO GOLDEN HOUR): TEACHER'S CAMP WHITE HALL */}
+          <Stage5Venue onOpenMapModal={() => setMapModalOpen(true)} />
+
+          {/* STAGE 6 (07:30 PM): PRE-NUP GALLERY */}
+          <Stage6Gallery
+            items={galleryItems}
+            crtMode={crtMode}
+            onToggleCrt={handleToggleCrt}
+            onLikeItem={handleLikeItem}
+            onOpenLightbox={handleOpenLightbox}
+          />
+
+          {/* STAGE 7 (09:30 PM): RSVP ENDING CREDITS */}
+          <Stage7Rsvp
+            roster={partyRoster}
+            onRsvpSuccess={handleRsvpSuccess}
+          />
         </div>
       </main>
-    </div>
+
+      {/* 4. FULL-WIDTH 2.5D BEAT-'EM-UP STREET FLOOR CANVAS */}
+      <FloorCanvas />
+
+      {/* 5. BOTTOM CONTROLS & DIALOGUE STRIP */}
+      <FloorHudControls />
+
+      {/* MODALS */}
+      <MapModal
+        isOpen={mapModalOpen}
+        onClose={() => setMapModalOpen(false)}
+      />
+
+      <ComicModal
+        isOpen={comicModalOpen}
+        onClose={() => setComicModalOpen(false)}
+      />
+
+      <GalleryLightboxModal
+        isOpen={lightboxOpen}
+        currentIndex={lightboxIndex}
+        items={galleryItems}
+        onClose={() => setLightboxOpen(false)}
+        onStep={handleStepLightbox}
+        onLikeCurrent={handleLikeCurrent}
+      />
+
+      <RsvpSuccessModal
+        isOpen={rsvpSuccessOpen}
+        summaryText={rsvpSummary}
+        onClose={() => setRsvpSuccessOpen(false)}
+      />
+    </>
   );
 }

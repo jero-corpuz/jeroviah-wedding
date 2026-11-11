@@ -1,0 +1,33 @@
+[
+  {
+    "name": "Juan Dela Cruz",
+    "companions": ["Maria Dela Cruz", "Pedro Dela Cruz", "Sofia Dela Cruz"],
+    "clan": "Both Players"
+  },
+  {
+    "name": "Scott Pilgrim",
+    "companions": ["Ramona Flowers", "Stacey Pilgrim"],
+    "clan": "Team Jero"
+  },
+  {
+    "name": "Stephen Stills",
+    "companions": ["Julie Powers", "Young Neil"],
+    "clan": "Team Jero"
+  },
+  {
+    "name": "Kim Pine",
+    "companions": ["Hollie Hawkes", "Joseph"],
+    "clan": "Team Viah"
+  },
+  {
+    "name": "Wallace Wells",
+    "companions": ["Mobile"],
+    "clan": "Both Players"
+  },
+  {
+    "name": "Knives Chau",
+    "companions": [],
+    "clan": "Team Viah"
+  }
+]
+

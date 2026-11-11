@@ -1,0 +1,2249 @@
+/* =====================================================================
+           1. CORE RESET, VARIABLES & PIXEL RENDERING (100% VANILLA CSS)
+           ===================================================================== */
+        :root {
+            --hud-yellow-top: #fef08a;
+            --hud-yellow-mid: #facc15;
+            --hud-yellow-bot: #ca8a04;
+            --hud-crimson: #7f1d1d;
+            --hud-cyan: #22d3ee;
+            --hud-cyan-dark: #0284c7;
+            --crit-red: #ef4444;
+            --neon-pink: #ff2a85;
+            --neon-green: #22c55e;
+            --comic-cream: #fefce8;
+            --wood-dark: #3b2314;
+            --wood-mid: #5c3a21;
+            --steel-dark: #1e293b;
+            --steel-mid: #475569;
+            --steel-light: #94a3b8;
+            --font-arcade: 'Press Start 2P', monospace;
+            --font-comic: 'Bangers', cursive;
+            --font-body: 'Chakra Petch', sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0f172a;
+            color: #ffffff;
+            font-family: var(--font-body);
+            user-select: none;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        button, input, select, textarea {
+            font-family: inherit;
+        }
+
+        .pixel-canvas {
+            image-rendering: -moz-crisp-edges;
+            image-rendering: -webkit-crisp-edges;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        /* Custom Scrollbar for Inner Signboard Content */
+        .custom-scroll::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.25);
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: var(--hud-yellow-mid);
+            border: 1px solid #000;
+        }
+
+        @keyframes blinkText {
+            0%, 49% { opacity: 1; }
+            50%, 100% { opacity: 0.22; }
+        }
+        .blink { animation: blinkText 0.9s infinite; }
+
+        /* =====================================================================
+           2. AUTHENTIC BEAT-'EM-UP TOP HUD (FLOATING OVER THE OPEN SKY)
+           ===================================================================== */
+        .brawler-hud {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 90;
+            padding: 6px 14px 4px 14px;
+            background: linear-gradient(180deg, rgba(0,0,0,0.68) 0%, rgba(0,0,0,0.28) 70%, transparent 100%);
+            pointer-events: none;
+        }
+
+        .hud-main-grid {
+            max-width: 1460px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            align-items: start;
+            gap: 12px;
+        }
+
+        /* Player 1 (Left) & Player 2 (Right) Fighter Clusters */
+        .fighter-hud-cluster {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            pointer-events: auto;
+        }
+        .fighter-hud-cluster.p2 {
+            flex-direction: row-reverse;
+        }
+
+        /* Silver-Rimmed Portrait Medallion with P1 / P2 Badge */
+        .portrait-medallion {
+            position: relative;
+            width: 56px;
+            height: 60px;
+            background: radial-gradient(circle at 50% 40%, #475569, #0f172a);
+            border: 3px solid #e2e8f0;
+            border-radius: 10px 10px 14px 14px;
+            box-shadow: 0 0 0 2px #000, 0 4px 8px rgba(0,0,0,0.75), inset 0 2px 4px rgba(255,255,255,0.4);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.12s ease;
+        }
+        .portrait-medallion:hover {
+            transform: scale(1.06);
+        }
+        .portrait-tag {
+            position: absolute;
+            bottom: -7px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: var(--font-arcade);
+            font-size: 10px;
+            padding: 2px 5px;
+            border-radius: 4px;
+            border: 2px solid #000;
+            color: #fff;
+            text-shadow: 1px 1px 0 #000;
+        }
+        .portrait-tag.p1-tag { background: #dc2626; }
+        .portrait-tag.p2-tag { background: #16a34a; }
+
+        /* Bars Column (Name + Score Row, Yellow Health Capsule, 3 Cyan Special Bars) */
+        .bars-column {
+            flex: 1;
+            max-width: 380px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .hud-text-row {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 6px;
+            font-family: var(--font-arcade);
+            text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+        }
+        .hud-fighter-name {
+            font-size: 15px;
+            color: #ffffff;
+            letter-spacing: 0.05em;
+        }
+        .hud-score-cluster {
+            display: flex;
+            align-items: baseline;
+            gap: 5px;
+            font-size: 12px;
+        }
+        .score-zeros { color: #f59e0b; }
+        .score-val   { color: #fde047; }
+        .score-bonus { color: #fef08a; font-size: 11px; }
+        .score-bonus.red { color: #f87171; }
+        .insert-coin-txt {
+            font-size: 10px;
+            color: #f8fafc;
+        }
+
+        /* Primary Yellow-to-Amber Health Bar with Silver Capsule Rim & Crimson Backing */
+        .hp-capsule-outer {
+            width: 100%;
+            height: 19px;
+            background: var(--hud-crimson);
+            border: 3px solid #e2e8f0;
+            border-radius: 10px;
+            box-shadow: 0 0 0 2px #000000, inset 0 2px 4px rgba(0,0,0,0.75);
+            padding: 2px;
+            position: relative;
+            overflow: hidden;
+        }
+        .hp-capsule-fill {
+            height: 100%;
+            width: 94%;
+            border-radius: 6px;
+            background: linear-gradient(180deg, #fef9c3 0%, #facc15 45%, #d97706 100%);
+            box-shadow: inset 0 2px 0 rgba(255,255,255,0.65), 0 0 6px rgba(250, 204, 21, 0.5);
+            transition: width 0.25s ease;
+        }
+        .fighter-hud-cluster.p2 .hp-capsule-fill {
+            margin-left: auto;
+        }
+
+        /* 3 Segmented Cyan/Blue Special Bars Directly Under the Health Bar */
+        .special-segments-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 5px;
+            width: 84%;
+        }
+        .fighter-hud-cluster.p2 .special-segments-row {
+            margin-left: auto;
+        }
+        .special-seg {
+            height: 9px;
+            background: #0f172a;
+            border: 2px solid #cbd5e1;
+            border-radius: 3px;
+            box-shadow: 0 0 0 1px #000;
+            overflow: hidden;
+        }
+        .special-seg-fill {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(180deg, #67e8f9 0%, #0284c7 100%);
+        }
+        .special-seg-fill.glow-white {
+            background: linear-gradient(180deg, #ffffff 0%, #bae6fd 100%);
+        }
+
+        /* Compact "3 PUPS" Sub-Bar under Player 2 Portrait */
+        .sub-companion-hud {
+            margin-top: 5px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+            pointer-events: auto;
+            cursor: pointer;
+        }
+        .sub-companion-name {
+            font-family: var(--font-arcade);
+            font-size: 9px;
+            color: #f8fafc;
+            text-shadow: 1px 1px 0 #000;
+        }
+        .sub-companion-bar {
+            width: 108px;
+            height: 10px;
+            background: #450a0a;
+            border: 2px solid #e2e8f0;
+            border-radius: 5px;
+            box-shadow: 0 0 0 1.5px #000;
+            padding: 1px;
+            overflow: hidden;
+        }
+        .sub-companion-fill {
+            width: 92%;
+            height: 100%;
+            border-radius: 3px;
+            background: linear-gradient(180deg, #fde047 0%, #ea580c 100%);
+        }
+
+        /* Center Weather & Stage Pill Console */
+        .hud-side-dock {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            pointer-events: auto;
+        }
+        .sky-clock-pill {
+            font-family: var(--font-arcade);
+            font-size: 10px;
+            background: rgba(15, 23, 42, 0.86);
+            color: #fde047;
+            border: 2px solid #e2e8f0;
+            border-radius: 999px;
+            padding: 4px 10px;
+            box-shadow: 0 2px 0 #000;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            white-space: nowrap;
+        }
+        .stage-dots-bar {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .stage-chip {
+            font-family: var(--font-arcade);
+            font-size: 9px;
+            padding: 4px 6px;
+            background: rgba(15, 23, 42, 0.85);
+            color: #cbd5e1;
+            border: 2px solid #64748b;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.12s ease;
+        }
+        .stage-chip:hover {
+            border-color: #fff;
+            color: #fff;
+        }
+        .stage-chip.active {
+            background: #facc15;
+            color: #000;
+            border-color: #fff;
+            box-shadow: 0 0 8px rgba(250, 204, 21, 0.7);
+            transform: scale(1.05);
+        }
+
+        /* =====================================================================
+           3. FULL-SCREEN DYNAMIC SKY, WEATHER, CLOUDS, BIRDS & PINE HORIZON
+           ===================================================================== */
+        /* Open-Air Sky Canvas fills the top calc(var(--vh) * 76) completely unobstructed! */
+        #sky-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: calc(var(--vh) * 76);
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        /* Deep 2.5D Walkable Street Backdrop (Bottom calc(var(--vh) * 25)) */
+        .street-ground-backdrop {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100vw;
+            height: calc(var(--vh) * 25);
+            z-index: 5;
+            background:
+                linear-gradient(180deg,
+                    #94a3b8 0px,
+                    #94a3b8 6px,
+                    #475569 6px,
+                    #475569 16px,
+                    #1e293b 16px,
+                    #334155 22%,
+                    #262f3f 65%,
+                    #151b26 100%);
+            border-top: 4px solid #0f172a;
+            box-shadow: inset 0 10px 18px rgba(0,0,0,0.45);
+            pointer-events: none;
+        }
+
+        /* Perspective Pavement Joint Lines & Dashed Arcade Street Lane */
+        .street-ground-backdrop::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background-image:
+                repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 3px, transparent 3px, transparent 140px);
+        }
+        .street-ground-backdrop::after {
+            content: "";
+            position: absolute;
+            top: 48%;
+            left: 0;
+            right: 0;
+            height: 5px;
+            background: repeating-linear-gradient(90deg, rgba(250, 204, 21, 0.45) 0px, rgba(250, 204, 21, 0.45) 42px, transparent 42px, transparent 84px);
+        }
+
+        /* =====================================================================
+           4. OPEN-AIR HORIZONTAL 6-STAGE WORLD & ROADSIDE BILLBOARDS
+           ===================================================================== */
+        #world-viewport {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: calc(var(--vh) * 100);
+            overflow: hidden;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        #world-track {
+            display: flex;
+            flex-direction: row;
+            width: 600vw;
+            height: calc(var(--vh) * 100);
+            will-change: transform;
+        }
+
+        /* Each Stage is transparent at the top so the Sky, Clouds & Flying Birds shine through! */
+        .open-air-stage {
+            position: relative;
+            width: 100vw;
+            height: calc(var(--vh) * 100);
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            /* Anchored right onto the sidewalk curb at calc(var(--vh) * 25) from bottom! */
+            padding: 78px 18px calc(var(--vh) * 25) 18px;
+        }
+
+        /* Roadside Stage Structure Wrapper (Leaves the upper sky wide open!) */
+        .roadside-zone {
+            position: relative;
+            width: 100%;
+            max-width: 1280px;
+            max-height: calc(var(--vh) * 55);
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            pointer-events: auto;
+        }
+
+        /* Outdoor Highway Billboard Frame with Overhead Floodlights & Steel I-Beam Legs */
+        .highway-billboard {
+            position: relative;
+            background: var(--comic-cream);
+            color: #0f172a;
+            border: 6px solid #1e293b;
+            outline: 3px solid #000000;
+            border-radius: 6px;
+            box-shadow:
+                0 10px 0 #0f172a,
+                0 14px 24px rgba(0,0,0,0.65);
+            padding: 12px 16px;
+            overflow-y: auto;
+            max-height: calc(var(--vh) * 50);
+        }
+
+        /* Bulb-Lit Roadside Marquee Variant (Stage 0 & Stage 4) */
+        .marquee-billboard {
+            background: linear-gradient(180deg, #1e1b4b 0%, #0f172a 100%);
+            color: #ffffff;
+            border: 8px solid #b45309;
+            outline: 3px solid #000;
+            box-shadow:
+                inset 0 0 18px rgba(250, 204, 21, 0.35),
+                0 0 20px rgba(250, 204, 21, 0.3),
+                0 10px 0 #000;
+        }
+        .marquee-billboard::before {
+            content: "";
+            position: absolute;
+            inset: 2px;
+            border: 4px dotted #fef08a;
+            pointer-events: none;
+            opacity: 0.9;
+        }
+
+        /* Baguio Timber Lodge Signboard Variant (Stage 3) */
+        .timber-billboard {
+            background: #fef3c7;
+            color: #1c1917;
+            border: 8px solid var(--wood-mid);
+            outline: 3px solid #000;
+            box-shadow:
+                inset 0 0 0 3px var(--wood-dark),
+                0 10px 0 var(--wood-dark);
+        }
+
+        /* Steel I-Beam / Timber Support Pillars bolting the Billboard into the Sidewalk Curb */
+        .billboard-pillars-row {
+            display: flex;
+            justify-content: space-around;
+            width: 82%;
+            margin: 0 auto;
+            height: 24px;
+            flex-shrink: 0;
+            pointer-events: none;
+        }
+        .steel-pillar {
+            width: 24px;
+            height: 100%;
+            background: linear-gradient(90deg, #1e293b 0%, #64748b 50%, #0f172a 100%);
+            border-left: 3px solid #000;
+            border-right: 3px solid #000;
+            position: relative;
+        }
+        .steel-pillar::after {
+            content: "";
+            position: absolute;
+            bottom: -4px;
+            left: -8px;
+            right: -8px;
+            height: 7px;
+            background: #475569;
+            border: 2px solid #000;
+        }
+        .timber-pillar {
+            width: 26px;
+            height: 100%;
+            background: linear-gradient(90deg, #3b2314 0%, #78472a 50%, #27170d 100%);
+            border-left: 3px solid #000;
+            border-right: 3px solid #000;
+        }
+
+        /* Overhead Billboard Floodlight Fixtures (Glow automatically from Sunset to Night!) */
+        .floodlight-bar {
+            display: flex;
+            justify-content: space-around;
+            width: 86%;
+            margin: 0 auto -3px auto;
+            pointer-events: none;
+            z-index: 5;
+        }
+        .floodlight-lamp {
+            width: 34px;
+            height: 9px;
+            background: #334155;
+            border: 2px solid #000;
+            border-radius: 4px 4px 0 0;
+            position: relative;
+            transition: box-shadow 0.4s ease, background 0.4s ease;
+        }
+        body.dusk-lights-on .floodlight-lamp {
+            background: #fef08a;
+            box-shadow: 0 -4px 16px rgba(254, 240, 138, 0.9), 0 8px 24px rgba(254, 240, 138, 0.75);
+        }
+
+        /* =====================================================================
+           5. STAGE-SPECIFIC OPEN-AIR SIGNBOARDS, CARDS & CONTROLS
+           ===================================================================== */
+        .arcade-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            font-family: var(--font-arcade);
+            font-size: 11px;
+            line-height: 1.2;
+            padding: 8px 12px;
+            border: 3px solid #000;
+            border-radius: 4px;
+            box-shadow: 3px 3px 0 #000;
+            cursor: pointer;
+            text-decoration: none;
+            transition: transform 0.1s ease, box-shadow 0.1s ease;
+            white-space: nowrap;
+        }
+        .arcade-btn:hover {
+            transform: translate(-1px, -1px);
+            box-shadow: 4px 4px 0 #000;
+        }
+        .arcade-btn:active {
+            transform: translate(2px, 2px);
+            box-shadow: 1px 1px 0 #000;
+        }
+        .btn-gold  { background: #facc15; color: #000; }
+        .btn-red   { background: #ef4444; color: #fff; }
+        .btn-cyan  { background: #22d3ee; color: #000; }
+        .btn-green { background: #22c55e; color: #000; }
+        .btn-cream { background: #fefce8; color: #000; }
+
+        .brawler-title {
+            font-family: var(--font-comic);
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: #fde047;
+            text-shadow:
+                -3px -3px 0 #000,
+                 3px -3px 0 #000,
+                -3px  3px 0 #000,
+                 3px  3px 0 #000,
+                 5px  5px 0 #dc2626;
+        }
+
+        .poster-header-tag {
+            background: #0f172a;
+            color: #fde047;
+            font-family: var(--font-arcade);
+            font-size: 10px;
+            padding: 4px 7px;
+            border: 2px solid #000;
+            display: inline-block;
+        }
+
+        .crit-hit-banner {
+            display: inline-block;
+            font-family: var(--font-arcade);
+            font-size: 12px;
+            color: #ef4444;
+            text-shadow:
+                -2px -2px 0 #000,
+                 2px -2px 0 #000,
+                -2px  2px 0 #000,
+                 2px  2px 0 #000;
+            letter-spacing: 0.05em;
+        }
+
+        .sign-card {
+            background: #ffffff;
+            color: #0f172a;
+            border: 3px solid #000;
+            box-shadow: 4px 4px 0 rgba(0,0,0,0.7);
+            padding: 9px 11px;
+            border-radius: 4px;
+        }
+
+        /* Stage 0: Countdown Highway Sign */
+        .cd-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            max-width: 440px;
+            margin: 6px auto;
+        }
+        .cd-box {
+            background: #0f172a;
+            border: 2px solid #fde047;
+            box-shadow: 3px 3px 0 #000;
+            padding: 5px 4px;
+            text-align: center;
+        }
+        .cd-val {
+            font-family: var(--font-arcade);
+            font-size: 16px;
+            color: #fde047;
+        }
+        .cd-lbl {
+            font-family: var(--font-arcade);
+            font-size: 8px;
+            color: #cbd5e1;
+            margin-top: 2px;
+        }
+
+        /* Stage 1: 3-Column Roadside Park Signboards */
+        .stage1-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1.1fr;
+            gap: 10px;
+        }
+        .stat-line {
+            font-family: var(--font-arcade);
+            font-size: 9px;
+            margin-top: 5px;
+        }
+        .stat-track {
+            width: 100%;
+            height: 7px;
+            background: #cbd5e1;
+            border: 1.5px solid #000;
+            margin-top: 2px;
+        }
+        .stat-fill { height: 100%; }
+
+        /* =====================================================================
+           FULL-SCREEN ARCADE MODE (HIDES STREET & HUD ON STAGE 0 & STAGE 1)
+           ===================================================================== */
+        .brawler-hud,
+        .street-ground-backdrop,
+        #brawler-floor-canvas,
+        .floor-hud-controls {
+            transition: opacity 0.35s ease, transform 0.35s ease;
+        }
+
+        body.in-arcade-fullscreen .brawler-hud {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(-24px);
+        }
+        body.in-arcade-fullscreen .street-ground-backdrop,
+        body.in-arcade-fullscreen #brawler-floor-canvas,
+        body.in-arcade-fullscreen .floor-hud-controls {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(30px);
+        }
+
+        .fullscreen-arcade-stage {
+            position: relative;
+            width: 100vw;
+            height: calc(var(--vh) * 100);
+            flex-shrink: 0;
+            padding: 0 !important;
+            margin: 0 !important;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            pointer-events: auto;
+            z-index: 75;
+            overflow: hidden;
+        }
+
+        /* =====================================================================
+           STAGE 0: FULL-SCREEN STREET FIGHTER (1987) ARCADE TITLE SCREEN
+           ===================================================================== */
+        .sf1-title-cabinet {
+            position: relative;
+            width: 100vw;
+            height: calc(var(--vh) * 100);
+            background: #000000;
+            color: #ffffff;
+            padding: clamp(16px, calc(var(--vh) * 3), 36px) clamp(20px, 5vw, 64px);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            text-align: center;
+            cursor: pointer;
+            overflow: hidden;
+            user-select: none;
+        }
+        /* Subtle CRT Scanline Overlay on Full-Screen Arcade Stages */
+        .sf1-title-cabinet::after,
+        .sf2-select-cabinet::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.24) 0px,
+                rgba(0, 0, 0, 0.24) 1px,
+                transparent 1px,
+                transparent 3px
+            );
+            pointer-events: none;
+            z-index: 15;
+        }
+
+        .sf1-top-score-bar {
+            width: 100%;
+            max-width: 1100px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: var(--font-arcade);
+            font-size: clamp(11px, 1.1vw, 13px);
+            color: #ffffff;
+            text-shadow: 2px 2px 0 #b91c1c;
+        }
+
+        .sf1-brush-logo-wrap {
+            display: inline-block;
+            transform: rotate(-6deg) skewX(-10deg);
+            margin: 8px 0 12px 0;
+            padding: 6px 20px;
+        }
+        .sf1-brush-line1 {
+            font-family: var(--font-comic);
+            font-size: clamp(62px, 10.5vw, 132px);
+            line-height: 0.84;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            background: linear-gradient(180deg, #ff1e00 0%, #ff2a00 38%, #ff9900 72%, #ffd000 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(5px 5px 0 #000) drop-shadow(-3px -3px 0 #000) drop-shadow(0px 7px 0 #450a0a);
+        }
+        .sf1-brush-line2 {
+            font-family: var(--font-comic);
+            font-size: clamp(54px, 9.2vw, 114px);
+            line-height: 0.86;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            margin-left: 34px;
+            background: linear-gradient(180deg, #ff1e00 0%, #ff5500 40%, #ffb700 75%, #ffe600 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(5px 5px 0 #000) drop-shadow(-3px -3px 0 #000) drop-shadow(0px 7px 0 #450a0a);
+        }
+
+        .sf1-push-start {
+            font-family: var(--font-arcade);
+            font-size: clamp(15px, 1.9vw, 22px);
+            color: #93c5fd;
+            text-shadow: 3px 3px 0 #1d4ed8, -1px -1px 0 #1e3a8a;
+            letter-spacing: 0.08em;
+            margin-top: 6px;
+        }
+        .sf1-enter-sub {
+            display: inline-block;
+            font-family: var(--font-arcade);
+            font-size: clamp(10px, 1vw, 11px);
+            color: #fde047;
+            background: #111827;
+            border: 2px solid #93c5fd;
+            padding: 6px 14px;
+            margin-top: 10px;
+            border-radius: 4px;
+            box-shadow: 3px 3px 0 #1d4ed8;
+        }
+        .sf1-menu-lines {
+            font-family: var(--font-arcade);
+            font-size: clamp(13px, 1.45vw, 17px);
+            color: #ffffff;
+            text-shadow: 2px 2px 0 #b91c1c, -1px -1px 0 #7f1d1d;
+            line-height: 2.1;
+            margin: 12px 0;
+        }
+        .sf1-bottom-bar {
+            width: 100%;
+            max-width: 1100px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            padding-top: 10px;
+            font-family: var(--font-arcade);
+            font-size: clamp(13px, 1.35vw, 16px);
+        }
+        .sf1-capcom-copy {
+            color: #facc15;
+            text-shadow: 2px 2px 0 #92400e;
+        }
+        .sf1-credit-txt {
+            color: #ffffff;
+            text-shadow: 2px 2px 0 #b91c1c;
+        }
+        .sf1-credit-num {
+            color: #facc15;
+            text-shadow: 2px 2px 0 #92400e;
+        }
+
+        /* =====================================================================
+           STAGE 1: FULL-SCREEN STREET FIGHTER II "PLAYER SELECT" SCREEN
+           ===================================================================== */
+        .sf2-select-cabinet {
+            position: relative;
+            width: 100vw;
+            height: calc(var(--vh) * 100);
+            background: linear-gradient(180deg, #000050 0%, #000078 52%, #000038 100%);
+            color: #ffffff;
+            padding: clamp(12px, calc(var(--vh) * 2.2), 26px) clamp(14px, 3.5vw, 48px);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            overflow-y: auto;
+        }
+
+        .sf2-header-row {
+            width: 100%;
+            max-width: 1360px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .sf2-title-text {
+            font-family: var(--font-arcade);
+            font-size: clamp(18px, 2.8vw, 34px);
+            letter-spacing: 0.08em;
+            background: linear-gradient(180deg, #fffbeb 0%, #fde047 45%, #ea580c 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(3px 3px 0 #000) drop-shadow(-1px -1px 0 #000);
+        }
+
+        .sf2-preview-lock-pill {
+            font-family: var(--font-arcade);
+            font-size: 10px;
+            background: #dc2626;
+            color: #fef08a;
+            border: 2px solid #ffffff;
+            padding: 5px 10px;
+            box-shadow: 3px 3px 0 #000;
+            text-transform: uppercase;
+        }
+
+        /* 3-Column Full-Screen SF2 Player Select Layout */
+        .sf2-arena-grid {
+            width: 100%;
+            max-width: 1360px;
+            margin: auto;
+            display: grid;
+            grid-template-columns: minmax(240px, 310px) 1fr minmax(240px, 310px);
+            gap: clamp(12px, 2vw, 28px);
+            align-items: end;
+        }
+
+        .sf2-side-preview {
+            background: rgba(0, 0, 28, 0.65);
+            border: 3px solid #38bdf8;
+            box-shadow: 6px 6px 0 #000;
+            padding: 12px;
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+        .sf2-side-preview.p1-side {
+            border-color: #ef4444;
+        }
+        .sf2-side-preview.p2-side {
+            border-color: #38bdf8;
+        }
+
+        .sf2-player-tag {
+            font-family: var(--font-arcade);
+            font-size: clamp(18px, 2.2vw, 28px);
+            line-height: 1;
+            text-shadow: 3px 3px 0 #000, -1px -1px 0 #000;
+        }
+        .sf2-player-tag.p1 { color: #ef4444; }
+        .sf2-player-tag.p2 { color: #38bdf8; }
+
+        .sf2-fighter-big-name {
+            font-family: var(--font-arcade);
+            font-size: clamp(17px, 2vw, 26px);
+            margin: 6px 0 10px 0;
+            background: linear-gradient(180deg, #ffffff 0%, #fde047 50%, #f97316 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(3px 3px 0 #000);
+            min-height: 24px;
+        }
+
+        .sf2-big-portrait-box {
+            width: clamp(136px, 15vw, 185px);
+            height: clamp(136px, 15vw, 185px);
+            background: radial-gradient(circle at 50% 35%, #1e3a8a, #020617);
+            border: 4px solid #ffffff;
+            outline: 3px solid #000000;
+            box-shadow: inset 0 0 18px rgba(0,0,0,0.85), 0 6px 0 #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .sf2-big-portrait-box canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .sf2-bio-card {
+            width: 100%;
+            background: #020617;
+            border: 2px solid #64748b;
+            padding: 8px 10px;
+            margin-top: 10px;
+            text-align: left;
+            font-size: 15px;
+            line-height: 1.35;
+            color: #e2e8f0;
+        }
+        .sf2-bio-role {
+            font-family: var(--font-arcade);
+            font-size: 10px;
+            color: #fde047;
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        /* Center Column: Large Pixel World Map + 2x3 Roster Grid */
+        .sf2-center-col {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .sf2-map-frame {
+            width: 100%;
+            max-width: 620px;
+            height: clamp(150px, calc(var(--vh) * 22), 210px);
+            background: #000048;
+            border: 3px solid #3b82f6;
+            box-shadow: inset 0 0 18px rgba(0,0,0,0.85), 0 6px 0 #000;
+            border-radius: 6px;
+            display: block;
+        }
+
+        .sf2-roster-grid {
+            display: grid;
+            grid-template-columns: repeat(3, clamp(86px, 9.5vw, 112px));
+            grid-template-rows: repeat(2, clamp(78px, calc(var(--vh) * 9), 96px));
+            gap: 6px;
+            background: #94a3b8;
+            padding: 6px;
+            border: 4px solid #ffffff;
+            outline: 3px solid #000000;
+            box-shadow: 0 8px 0 #000;
+        }
+
+        .sf2-cell {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background: #0f172a;
+            border: 2px solid #334155;
+            cursor: pointer;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            transition: transform 0.08s ease;
+        }
+        .sf2-cell:hover {
+            transform: scale(1.05);
+            z-index: 5;
+        }
+        .sf2-cell canvas {
+            position: absolute;
+            top: 4px;
+            left: 50%;
+            transform: translateX(-50%);
+            height: 72%;
+            width: auto;
+            max-width: 92%;
+            aspect-ratio: 112 / 104;      /* keep sprite pixels square */
+            object-fit: contain;
+        }
+        .sf2-cell-label {
+            position: relative;
+            z-index: 2;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.86);
+            color: #f8fafc;
+            font-family: var(--font-arcade);
+            font-size: 9px;
+            text-align: center;
+            padding: 3px 2px;
+            letter-spacing: -0.02em;
+        }
+
+        /* Flashing 1P (Red) & 2P (Cyan) Selection Brackets */
+        .sf2-cell.active-1p {
+            border: 3px solid #ef4444;
+            box-shadow: inset 0 0 0 2px #fde047, 0 0 12px rgba(239, 68, 68, 0.95);
+            z-index: 6;
+        }
+        .sf2-cell.active-1p::before {
+            content: "1P";
+            position: absolute;
+            top: 2px;
+            left: 3px;
+            font-family: var(--font-arcade);
+            font-size: 11px;
+            color: #ef4444;
+            text-shadow: 1px 1px 0 #fff, -1px -1px 0 #000;
+            z-index: 4;
+            animation: blinkText 0.45s infinite;
+        }
+        .sf2-cell.active-2p {
+            border: 3px solid #38bdf8;
+            box-shadow: inset 0 0 0 2px #ffffff, 0 0 12px rgba(56, 189, 248, 0.95);
+            z-index: 6;
+        }
+        .sf2-cell.active-2p::after {
+            content: "2P";
+            position: absolute;
+            top: 2px;
+            right: 3px;
+            font-family: var(--font-arcade);
+            font-size: 11px;
+            color: #38bdf8;
+            text-shadow: 1px 1px 0 #000, -1px -1px 0 #fff;
+            z-index: 4;
+            animation: blinkText 0.45s infinite;
+        }
+
+        .sf2-bottom-bar {
+            width: 100%;
+            max-width: 1360px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding-top: 8px;
+            border-top: 2px solid rgba(59, 130, 246, 0.45);
+        }
+
+        @media (max-width: 1024px) {
+            .sf2-arena-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+            .sf2-center-col {
+                grid-column: span 2;
+                order: -1;
+            }
+        }
+        @media (max-width: 680px) {
+            .sf2-arena-grid {
+                grid-template-columns: 1fr;
+            }
+            .sf2-center-col {
+                grid-column: span 1;
+            }
+        }
+
+        /* Stage 2: 4 Separate Highway Wave Billboards */
+        .waves-billboard-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+        }
+        .wave-highway-sign {
+            background: #064e3b;
+            color: #ffffff;
+            border: 4px solid #ffffff;
+            outline: 3px solid #000000;
+            border-radius: 6px;
+            padding: 10px;
+            box-shadow: 0 6px 0 #000;
+            position: relative;
+        }
+        .wave-exit-tab {
+            background: #facc15;
+            color: #000;
+            font-family: var(--font-arcade);
+            font-size: 10px;
+            padding: 3px 6px;
+            border: 2px solid #000;
+            display: inline-block;
+            margin-bottom: 5px;
+        }
+
+        /* Stage 4: Open-Air Festival String-Bulb Gallery */
+        .gallery-wall-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+        }
+        .gallery-frame-card {
+            background: var(--comic-cream);
+            color: #000;
+            border: 3px solid #000;
+            padding: 5px;
+            box-shadow: 4px 4px 0 rgba(0,0,0,0.75);
+            cursor: pointer;
+            transition: transform 0.12s ease;
+        }
+        .gallery-frame-card:hover {
+            transform: translateY(-3px) scale(1.02);
+        }
+        .gallery-thumb {
+            width: 100%;
+            height: 74px;
+            border: 2px solid #000;
+            overflow: hidden;
+            background: #000;
+        }
+        .gallery-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        /* Stage 5: Starlit Altar & RSVP Booth */
+        .rsvp-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 7px;
+        }
+        .brawler-input {
+            width: 100%;
+            background: #ffffff;
+            color: #000000;
+            border: 2px solid #000000;
+            padding: 5px 8px;
+            font-family: var(--font-body);
+            font-weight: 700;
+            font-size: 15px;
+            box-shadow: 2px 2px 0 #000;
+            outline: none;
+        }
+        .brawler-input:focus {
+            background: #fef9c3;
+        }
+        .brawler-label {
+            display: block;
+            font-family: var(--font-arcade);
+            font-size: 9px;
+            color: #0f172a;
+            margin-bottom: 2px;
+        }
+
+        /* =====================================================================
+           5B. HILLTOP DIORAMA SPLIT LAYOUTS (STAGE 3 TEACHER'S CAMP & STAGE 5 CHURCH)
+           ===================================================================== */
+        .hill-stage-split {
+            width: 100%;
+            max-width: 1340px;
+            height: calc(var(--vh) * 62);
+            display: grid;
+            grid-template-columns: 1.38fr 0.92fr;
+            gap: 14px;
+            align-items: end;
+            pointer-events: auto;
+        }
+
+        .hill-diorama-box {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            /* Extend slightly down so the hill stone stairs meet the 2.5D sidewalk curb seamlessly */
+            margin-bottom: -14px;
+            z-index: 30;
+        }
+
+        .hill-diorama-canvas {
+            width: 100%;
+            height: 100%;
+            max-height: calc(var(--vh) * 58);
+            object-fit: contain;
+            object-position: bottom center;
+            cursor: pointer;
+            filter: drop-shadow(0 8px 0 rgba(0,0,0,0.65));
+        }
+
+        .hill-action-floating-pill {
+            position: absolute;
+            top: 6px;
+            left: 12px;
+            background: rgba(15, 23, 42, 0.9);
+            color: #fde047;
+            border: 2px solid #fff;
+            outline: 2px solid #000;
+            padding: 5px 9px;
+            font-family: var(--font-arcade);
+            font-size: 10px;
+            border-radius: 4px;
+            box-shadow: 3px 3px 0 #000;
+            pointer-events: auto;
+            cursor: pointer;
+        }
+
+        .trail-kiosk-panel {
+            position: relative;
+            width: 100%;
+            max-height: calc(var(--vh) * 54);
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+        }
+
+        /* =====================================================================
+           6. FULL-WIDTH 2.5D WALKABLE STREET CANVAS (BOTTOM 34VH)
+           ===================================================================== */
+        #brawler-floor-canvas {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100vw;
+            height: calc(var(--vh) * 34);
+            z-index: 45;
+            pointer-events: auto;
+            cursor: pointer;
+        }
+
+        /* Floating Street Controls & Dialogue Dock */
+        .floor-hud-controls {
+            position: fixed;
+            bottom: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 65;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            pointer-events: auto;
+            background: rgba(15, 23, 42, 0.92);
+            border: 3px solid #e2e8f0;
+            outline: 2px solid #000;
+            border-radius: 8px;
+            padding: 5px 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.85);
+            max-width: 96vw;
+        }
+
+        .brawler-speech-box {
+            font-size: 15px;
+            font-weight: 700;
+            color: #fefce8;
+            max-width: 420px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: pointer;
+        }
+
+        /* Modals */
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 120;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .modal-backdrop.open {
+            display: flex;
+        }
+        .modal-card {
+            width: 100%;
+            max-width: 680px;
+            max-height: calc(var(--vh) * 90);
+            overflow-y: auto;
+            background: var(--comic-cream);
+            color: #000;
+            border: 5px solid #000;
+            outline: 3px solid #facc15;
+            border-radius: 8px;
+            padding: 18px;
+            box-shadow: 10px 10px 0 #000;
+        }
+
+        /* =====================================================================
+           7. RESPONSIVE BREAKPOINTS
+           ===================================================================== */
+        @media (max-width: 1024px) {
+            .stage1-grid {
+                grid-template-columns: 1fr;
+            }
+            .waves-billboard-row {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .gallery-wall-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .hill-stage-split {
+                grid-template-columns: 1fr;
+                height: calc(var(--vh) * 60);
+                gap: 8px;
+            }
+            .hill-diorama-canvas {
+                max-height: calc(var(--vh) * 30);
+            }
+            .trail-kiosk-panel .highway-billboard {
+                max-height: calc(var(--vh) * 26);
+            }
+        }
+
+        @media (max-width: 680px) {
+            .hud-main-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+            .hud-side-dock {
+                grid-column: span 2;
+                order: 3;
+            }
+            .portrait-medallion {
+                width: 44px;
+                height: 48px;
+            }
+            .hud-fighter-name {
+                font-size: 12px;
+            }
+            .open-air-stage {
+                padding: 104px 8px calc(var(--vh) * 24) 8px;
+            }
+            .roadside-zone {
+                max-height: calc(var(--vh) * 52);
+            }
+            .brawler-speech-box {
+                display: none;
+            }
+            .waves-billboard-row,
+            .rsvp-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    
+        /* =====================================================================
+           8. V2 OVERRIDES: REAL VIEWPORT HEIGHT, TOUCH, PHONE REFLOW
+           --vh is set from JS to 1% of window.innerHeight, so layouts match the
+           visible area on mobile browsers (address bar included).
+           ===================================================================== */
+        :root {
+            --vh: 1vh;
+            --safe-top: env(safe-area-inset-top, 0px);
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+            --street-h: calc(var(--vh) * 25);
+            --floor-h: calc(var(--vh) * 34);
+        }
+
+        input, select, textarea {
+            -webkit-user-select: text;
+            user-select: text;
+        }
+        button, a, label, .stage-chip, .sf2-cell { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+        .arcade-btn:focus-visible, .stage-chip:focus-visible, .brawler-input:focus-visible {
+            outline: 3px solid #38bdf8;
+            outline-offset: 2px;
+        }
+
+        .street-ground-backdrop { height: var(--street-h); }
+        #brawler-floor-canvas { height: var(--floor-h); pointer-events: none; cursor: default; }
+        .open-air-stage { padding-bottom: var(--street-h); }
+        .highway-billboard, .sf2-select-cabinet, .sf1-title-cabinet, #guestbookList {
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+        }
+        .brawler-hud { padding-top: calc(6px + var(--safe-top)); }
+        .floor-hud-controls { bottom: calc(8px + var(--safe-bottom)); }
+        .modal-card { max-height: calc(var(--vh) * 90); }
+        .lightbox-frame {
+            height: min(320px, calc(var(--vh) * 48));
+            background: #000;
+            border: 3px solid #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .sound-btn { display: none; }
+        .sf1-title-cabinet { overflow-y: auto; }
+        .arcade-btn[disabled] { opacity: 0.6; cursor: wait; }
+        @media (pointer: coarse) {
+            .brawler-input { font-size: 17px; padding: 7px 8px; }
+        }
+
+        /* ---------- Tablet & small laptop ---------- */
+        @media (max-width: 1024px) {
+            .hill-stage-split {
+                height: 100%;
+                grid-template-rows: minmax(0, 0.85fr) minmax(0, 1.15fr);
+            }
+            .hill-diorama-box { min-height: 0; margin-bottom: 0; }
+            .hill-diorama-canvas { max-height: 100%; }
+            .trail-kiosk-panel { min-height: 0; max-height: 100%; }
+            .trail-kiosk-panel .highway-billboard { max-height: none; min-height: 0; flex: 0 1 auto; }
+        }
+
+        /* ---------- Phones ---------- */
+        @media (max-width: 680px) {
+            :root {
+                --street-h: calc(var(--vh) * 15);
+                --floor-h: calc(var(--vh) * 21);
+                --hud-h: calc(66px + var(--safe-top));
+            }
+
+            /* One-row HUD: portrait + name + HP bar on each side, time & stage dots in the middle */
+            .brawler-hud { padding: calc(5px + var(--safe-top)) 8px 4px; }
+            .hud-main-grid { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 6px; }
+            .hud-side-dock { grid-column: auto; order: 0; gap: 3px; }
+            .fighter-hud-cluster { gap: 5px; min-width: 0; }
+            .portrait-medallion { width: 34px; height: 38px; border-width: 2px; border-radius: 7px; }
+            .portrait-medallion canvas { width: 30px; height: 30px; }
+            .portrait-tag { font-size: 8px; padding: 1px 3px; bottom: -6px; }
+            .bars-column { min-width: 0; gap: 3px; }
+            .hud-fighter-name { font-size: 11px; }
+            .hud-score-cluster, .insert-coin-txt, .special-segments-row, .sub-companion-hud, .pill-extra { display: none; }
+            .hp-capsule-outer { height: 12px; border-width: 2px; padding: 1px; border-radius: 7px; }
+            .sky-clock-pill { font-size: 9px; padding: 3px 7px; gap: 4px; }
+            .stage-dots-bar { flex-wrap: nowrap; gap: 3px; }
+            .stage-chip { font-size: 9px; padding: 3px 5px; min-width: 18px; }
+            .stage-chip .chip-label { display: none; }
+            .stage-chip.active { transform: none; }
+
+            /* Stage content gets everything between the HUD and the street */
+            .open-air-stage { padding: var(--hud-h) 8px var(--street-h) 8px; }
+            .roadside-zone { max-height: 100%; min-height: 0; }
+            .highway-billboard { max-height: none; min-height: 0; flex: 0 1 auto; padding: 10px 10px 26px; border-width: 4px; }
+            .marquee-billboard, .timber-billboard { border-width: 5px; }
+            .billboard-pillars-row { height: 12px; }
+            .steel-pillar, .timber-pillar { width: 16px; }
+            .floodlight-lamp { width: 24px; height: 7px; }
+            .poster-header-tag { font-size: 9px; line-height: 1.5; }
+            .arcade-btn { font-size: 10px; padding: 9px 10px; }
+            .gallery-thumb { height: 92px; }
+            .gallery-wall-grid { gap: 8px; }
+            .wave-highway-sign h3 { font-size: 19px !important; }
+
+            /* Hill stages: short diorama banner above the kiosk / RSVP */
+            .hill-stage-split { grid-template-rows: calc(var(--vh) * 21) minmax(0, 1fr); gap: 6px; }
+            .hill-action-floating-pill { font-size: 8px; padding: 3px 6px; top: 2px; left: 4px; max-width: 70%; }
+            .rsvp-grid { gap: 8px; }
+            .brawler-label { font-size: 9px; margin-bottom: 3px; }
+
+            /* Bottom bar: speech ticker on top, big icon buttons below */
+            .floor-hud-controls {
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 5px;
+                padding: 4px 6px 6px;
+                width: calc(100vw - 16px);
+                max-width: 420px;
+            }
+            .brawler-speech-box {
+                display: block;
+                order: -1;
+                flex: 1 0 100%;
+                max-width: none;
+                font-size: 13px;
+                text-align: center;
+            }
+            .floor-hud-controls .arcade-btn { min-width: 44px; min-height: 42px; padding: 6px 8px; font-size: 18px; flex: 1 1 0; }
+            .floor-hud-controls .btn-label { display: none; }
+            .sound-btn { display: inline-flex; }
+
+            /* Title screen */
+            .sf1-title-cabinet { padding: calc(14px + var(--safe-top)) 14px calc(14px + var(--safe-bottom)); justify-content: flex-start; gap: 10px; }
+            .sf1-top-score-bar { font-size: 9px; }
+            .sf1-brush-logo-wrap { margin: 6px 0 10px; padding: 4px 6px; }
+            .sf1-brush-line1 { font-size: clamp(38px, 13vw, 70px); }
+            .sf1-brush-line2 { font-size: clamp(32px, 11vw, 60px); margin-left: 5vw; }
+            .sf1-push-start { font-size: 14px; }
+            .sf1-enter-sub { font-size: 9px; padding: 6px 8px; line-height: 1.6; }
+            .sf1-menu-lines { font-size: 11px; margin: 8px 0; }
+            .sf1-bottom-bar { justify-content: center; font-size: 11px; }
+            .sf1-bottom-hint { display: none; }
+            .cd-val { font-size: 14px; }
+
+            /* Player select */
+            .sf2-select-cabinet { padding: calc(10px + var(--safe-top)) 10px calc(14px + var(--safe-bottom)); justify-content: flex-start; gap: 12px; }
+            .sf2-header-row { justify-content: center; }
+            .sf2-title-text { order: -1; width: 100%; text-align: center; font-size: 18px; }
+            .sf2-preview-lock-pill { display: none; }
+            .sf2-arena-grid { grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; }
+            .sf2-center-col { grid-column: span 2; order: -1; gap: 8px; }
+            .sf2-map-frame { height: 96px; }
+            .sf2-roster-grid { grid-template-columns: repeat(3, minmax(0, 27vw)); grid-template-rows: repeat(2, 24vw); }
+            .sf2-side-preview { padding: 8px; }
+            .sf2-player-tag { font-size: 13px; }
+            .sf2-fighter-big-name { font-size: 13px; margin: 4px 0 6px; min-height: 14px; }
+            .sf2-big-portrait-box { width: 30vw; height: 30vw; }
+            .sf2-bio-card { font-size: 13px; padding: 6px; }
+            .sf2-bio-role { font-size: 8px; }
+            .sf2-bottom-bar { justify-content: center; }
+            .sf2-bottom-bar > span { display: none; }
+            #sf2PreviewBanner { font-size: 9px !important; line-height: 1.5; }
+        }
+
+        @media (max-width: 680px) and (max-height: 700px) {
+            .sf1-menu-lines, .sf1-enter-sub { display: none; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .blink, .sf2-cell.active-1p::before, .sf2-cell.active-2p::after { animation: none; }
+            .brawler-hud, .street-ground-backdrop, #brawler-floor-canvas, .floor-hud-controls { transition: none; }
+        }
+
+        /* Grid children may shrink below their content width (prevents form overflow on narrow phones) */
+        @media (max-width: 1024px) {
+            .hill-stage-split { grid-template-columns: minmax(0, 1fr); }
+        }
+        @media (max-width: 680px) {
+            .rsvp-grid, .waves-billboard-row { grid-template-columns: minmax(0, 1fr); }
+            .brawler-input { min-width: 0; max-width: 100%; }
+        }
+
+        /* Mid widths: keep the HUD on one line without overflowing */
+        @media (min-width: 681px) and (max-width: 1100px) {
+            .hud-main-grid { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+            .fighter-hud-cluster, .bars-column { min-width: 0; }
+            #hudTimeSub, .insert-coin-txt, .score-bonus, .stage-chip .chip-label { display: none; }
+            .stage-chip { min-width: 22px; }
+        }
+        @media (min-width: 681px) and (max-width: 900px) {
+            .hud-score-cluster { display: none; }
+        }
+
+        /* =====================================================================
+           9. ROUND 2: 7 STAGES, DRESS CODE BOUTIQUES, CEREMONY CARD, RSVP CREDITS
+           ===================================================================== */
+        #world-track { width: 700vw; }
+
+        /* Stage 2: dress code signboard */
+        .motif-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px; }
+        .motif-billboard { background: #f4f1ea; border-color: #688073; }
+        .motif-title { font-size: clamp(24px, 2.6vw, 34px); line-height: 1; margin: 7px 0 2px; color: #98B9D6; }
+        .motif-lead { font-size: 14.5px; font-weight: 700; color: #334155; margin-bottom: 6px; }
+        .swatch-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-bottom: 4px; }
+        .swatch { display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center; font-family: var(--font-arcade); font-size: 9px; color: #0f172a; }
+        .swatch-dot { width: 40px; height: 40px; border-radius: 50%; border: 3px solid #000; box-shadow: 3px 3px 0 #000; margin-bottom: 3px; }
+        .swatch small { font-family: var(--font-body); font-size: 12px; color: #64748b; }
+        .attire-card { margin-top: 7px; }
+        .attire-card p { font-size: 14.5px; line-height: 1.45; margin-top: 5px; }
+        .attire-tag { display: inline-block; font-family: var(--font-arcade); font-size: 9px; padding: 3px 6px; border: 2px solid #000; color: #fff; }
+        .attire-tag.formal { background: #688073; }
+        .attire-tag.semi { background: #6E8AA1; }
+        .no-white-card { margin-top: 9px; background: #fee2e2; color: #991b1b; border: 3px solid #000; box-shadow: 3px 3px 0 #000; font-family: var(--font-arcade); font-size: 10px; line-height: 1.5; padding: 7px 8px; text-align: center; }
+        .motif-note { font-size: 14px; font-weight: 700; color: #334155; margin-top: 8px; }
+
+        /* Stage 3: ceremony card */
+        .church-billboard { background: #fffbeb; }
+        .church-title { font-size: clamp(20px, 2.2vw, 30px); line-height: 1.05; margin: 7px 0 4px; }
+        .church-addr { font-size: 14.5px; font-weight: 700; color: #1e293b; }
+        .ceremony-row { display: flex; gap: 10px; align-items: center; margin: 9px 0; flex-wrap: wrap; }
+        .ceremony-time { background: #0f172a; color: #fde047; border: 3px solid #000; box-shadow: 3px 3px 0 #000; padding: 8px 10px; font-family: var(--font-arcade); font-size: 17px; text-align: center; }
+        .ceremony-time small { display: block; font-size: 8px; color: #cbd5e1; margin-top: 5px; }
+        .program-list { list-style: none; display: flex; flex-direction: column; gap: 3px; font-size: 14.5px; flex: 1; min-width: 170px; }
+        .church-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+        .church-actions .arcade-btn { white-space: normal; }
+        .church-maps { grid-column: 1 / -1; }
+
+        /* Stage 6: ending credits */
+        .credits-cabinet {
+            position: relative;
+            width: 100vw;
+            height: calc(var(--vh) * 100);
+            background: radial-gradient(ellipse at 50% -10%, #1e1b4b 0%, #0b0b1a 45%, #000 75%);
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            padding: calc(16px + var(--safe-top)) clamp(14px, 4vw, 56px) calc(16px + var(--safe-bottom));
+            overflow: hidden;
+        }
+        .credits-cabinet::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: repeating-linear-gradient(0deg, rgba(0,0,0,0.22) 0px, rgba(0,0,0,0.22) 1px, transparent 1px, transparent 3px);
+            pointer-events: none;
+            z-index: 1;
+        }
+        .credits-header, .credits-grid { position: relative; z-index: 2; width: 100%; max-width: 1200px; margin: 0 auto; }
+        .credits-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+        .credits-title { font-family: var(--font-arcade); font-size: clamp(16px, 2.2vw, 26px); color: #fde047; text-shadow: 3px 3px 0 #b91c1c; text-align: center; }
+        .credits-sub { font-family: var(--font-arcade); font-size: 10px; color: #93c5fd; }
+        .credits-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(14px, 3vw, 44px); }
+        .credits-form-panel { min-height: 0; overflow-y: auto; background: rgba(15, 23, 42, 0.88); border: 3px solid #98B9D6; outline: 3px solid #000; box-shadow: 6px 6px 0 #000; padding: 14px; align-self: center; max-height: 100%; }
+        .credits-form-panel h3 { font-family: var(--font-arcade); font-size: 13px; color: #98B9D6; margin-bottom: 12px; }
+        .credits-form-panel .brawler-label { color: #cbd5e1; }
+        .credits-form-panel textarea.brawler-input { resize: vertical; min-height: 54px; line-height: 1.35; }
+        .rsvp-wide { grid-column: 1 / -1; }
+        .rsvp-autocomplete-wrap { position: relative; }
+        .rsvp-autofill-menu {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            z-index: 40;
+            max-height: 170px;
+            overflow-y: auto;
+            background: #0f172a;
+            border: 3px solid #fde047;
+            box-shadow: 4px 4px 0 #000;
+            color: #fff;
+        }
+        .rsvp-autofill-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            width: 100%;
+            text-align: left;
+            padding: 7px 9px;
+            border: 0;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+            background: transparent;
+            color: #f8fafc;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .rsvp-autofill-item:last-child { border-bottom: 0; }
+        .rsvp-autofill-item:hover,
+        .rsvp-autofill-item.highlighted {
+            background: #1e3a8a;
+            color: #fde047;
+        }
+        .rsvp-autofill-main {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+        .rsvp-autofill-sub {
+            font-size: 12px;
+            font-weight: 700;
+            color: #93c5fd;
+            line-height: 1.25;
+        }
+        .rsvp-autofill-tag {
+            font-family: var(--font-arcade);
+            font-size: 8px;
+            color: #93c5fd;
+            white-space: nowrap;
+            text-align: right;
+            flex-shrink: 0;
+        }
+        .rsvp-hint-line {
+            margin-top: 5px;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.3;
+        }
+        .rsvp-hint-line.ok { color: #4ade80; }
+        .rsvp-hint-line.warn { color: #fca5a5; }
+        .rsvp-hint-line.info { color: #93c5fd; }
+        .rsvp-companions-dropdown {
+            border: 3px solid #38bdf8;
+            background: rgba(2, 6, 23, 0.78);
+            box-shadow: 3px 3px 0 #000;
+        }
+        .rsvp-companions-dropdown.disabled {
+            opacity: 0.6;
+        }
+        .rsvp-companions-trigger {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 8px 10px;
+            border: 0;
+            background: rgba(30, 58, 138, 0.55);
+            color: #fde047;
+            font-family: var(--font-arcade);
+            font-size: 9px;
+            line-height: 1.4;
+            text-align: left;
+            cursor: pointer;
+        }
+        .rsvp-companions-menu {
+            padding: 8px 10px;
+            border-top: 2px solid #000;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .rsvp-companions-tools {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+            font-size: 12px;
+            color: #cbd5e1;
+        }
+        .rsvp-companions-tools button {
+            background: transparent;
+            border: 1px solid #64748b;
+            color: #93c5fd;
+            font-family: var(--font-arcade);
+            font-size: 8px;
+            padding: 3px 6px;
+            cursor: pointer;
+        }
+        .rsvp-companions-tools button:hover {
+            border-color: #fde047;
+            color: #fde047;
+        }
+        .rsvp-companion-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+            gap: 6px;
+        }
+        .rsvp-companion-opt {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 6px 8px;
+            background: rgba(15, 23, 42, 0.9);
+            border: 2px solid #475569;
+            color: #f8fafc;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .rsvp-companion-opt.checked {
+            border-color: #4ade80;
+            background: rgba(20, 83, 45, 0.45);
+            color: #fde047;
+        }
+        .rsvp-companion-opt input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: #4ade80;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .rsvp-companion-info {
+            display: flex;
+            flex-direction: column;
+            line-height: 1.2;
+            min-width: 0;
+        }
+        .rsvp-companion-role {
+            font-size: 11px;
+            font-weight: 700;
+            color: #94a3b8;
+        }
+        .rsvp-companion-opt.checked .rsvp-companion-role {
+            color: #86efac;
+        }
+        .credits-submit { width: 100%; margin-top: 10px; padding: 11px 8px; white-space: normal; }
+        .credits-roll-panel {
+            position: relative;
+            min-height: 0;
+            overflow: hidden;
+            outline: none;
+            -webkit-mask-image: linear-gradient(transparent 0%, #000 14%, #000 86%, transparent 100%);
+            mask-image: linear-gradient(transparent 0%, #000 14%, #000 86%, transparent 100%);
+        }
+        .credits-roll { text-align: center; animation: creditsRoll var(--roll-dur, 40s) linear infinite; will-change: transform; }
+        .credits-roll-panel:hover .credits-roll, .credits-roll-panel:focus .credits-roll { animation-play-state: paused; }
+        @keyframes creditsRoll { from { transform: translateY(0); } to { transform: translateY(-50%); } }
+        .credit-half { padding: 40% 8px 30%; }
+        .credit-block, .credit-entry { margin-bottom: 38px; }
+        .credit-role { font-family: var(--font-arcade); font-size: 10px; color: #94a3b8; letter-spacing: 0.14em; line-height: 1.6; margin-bottom: 8px; }
+        .credit-name { font-family: var(--font-arcade); font-size: clamp(13px, 1.25vw, 15px); color: #fde047; line-height: 1.6; word-break: break-word; }
+        .credit-name.big { font-size: clamp(17px, 2vw, 24px); color: #ffffff; text-shadow: 3px 3px 0 #b91c1c; }
+        .credit-guest-count {
+            display: inline-block;
+            margin-top: 4px;
+            padding: 2px 7px;
+            background: rgba(30, 58, 138, 0.75);
+            border: 1px solid #38bdf8;
+            font-family: var(--font-arcade);
+            font-size: 8px;
+            color: #4ade80;
+            line-height: 1.5;
+        }
+        .credit-meta { font-family: var(--font-arcade); font-size: 9px; color: #98B9D6; margin-top: 5px; line-height: 1.6; }
+        .credit-msg { font-size: 16px; font-style: italic; color: #e2e8f0; margin-top: 6px; word-break: break-word; }
+        .credit-entry.is-new .credit-name { color: #4ade80; }
+        .credit-entry.is-new .credit-name::before { content: "NEW! "; color: #f472b6; }
+
+        @media (max-width: 1024px) {
+            .credits-grid { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); }
+        }
+        @media (max-width: 680px) {
+            .credits-cabinet { overflow-y: auto; gap: 10px; padding: calc(10px + var(--safe-top)) 12px calc(14px + var(--safe-bottom)); }
+            .credits-header { justify-content: center; }
+            .credits-title { order: -1; width: 100%; font-size: 15px; }
+            .credits-grid { flex: none; grid-template-columns: minmax(0, 1fr); grid-template-rows: calc(var(--vh) * 30) auto; }
+            .credits-roll-panel { order: -1; }
+            .credits-form-panel { max-height: none; overflow: visible; padding: 12px; }
+            .credit-half { padding: 50% 4px 30%; }
+            .swatch-dot { width: 32px; height: 32px; }
+            .swatch { font-size: 8px; }
+            .ceremony-time { font-size: 15px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .credits-roll { animation: none; }
+            .credits-roll-panel { overflow-y: auto; -webkit-mask-image: none; mask-image: none; }
+            .credit-half[aria-hidden="true"] { display: none; }
+            .credit-half { padding-top: 10px; }
+        }
+
+        /* =====================================================================
+           10. ROUND 3: 8 STAGES, ENTOURAGE STADIUM, GROUNDED DIORAMAS, PHONE HUD
+           ===================================================================== */
+        #world-track { width: 800vw; }
+
+        .squad-billboard { background: #f1f5f9; border-color: #6E8AA1; }
+        .squad-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+        .squad-card { background: #ffffff; border: 3px solid #000; box-shadow: 3px 3px 0 rgba(0,0,0,0.7); padding: 8px 10px; border-radius: 4px; }
+        .squad-role { font-family: var(--font-arcade); font-size: 10px; line-height: 1.5; color: #334155; margin-bottom: 5px; }
+        .squad-name { font-size: 15px; font-weight: 700; color: #0f172a; line-height: 1.35; }
+        .squad-name.tba { color: #94a3b8; font-style: italic; font-weight: 600; }
+
+        /* Tablet & phone: the diorama sits right on top of its billboard instead of floating */
+        @media (max-width: 1024px) {
+            .hill-stage-split {
+                display: flex;
+                flex-direction: column;
+                justify-content: flex-end;
+                gap: 0;
+                height: 100%;
+            }
+            .hill-stage-split .hill-diorama-box {
+                flex: 0 0 auto;
+                height: calc(var(--vh) * 30);
+                margin-bottom: -8px;
+                z-index: 31;
+            }
+            .hill-stage-split .hill-diorama-canvas { height: 100%; max-height: 100%; width: 100%; }
+            .hill-stage-split .trail-kiosk-panel { flex: 0 1 auto; min-height: 0; max-height: none; }
+            .hill-stage-split .trail-kiosk-panel > .floodlight-bar { display: none; }
+        }
+
+        @media (max-width: 680px) {
+            :root { --hud-h: calc(94px + var(--safe-top)); }
+            .hill-stage-split .hill-diorama-box { height: calc(var(--vh) * 22); }
+            .squad-grid { grid-template-columns: minmax(0, 1fr); }
+
+            /* Two-row phone HUD: players + time on top, all 8 stage buttons underneath */
+            .hud-main-grid { row-gap: 5px; }
+            .hud-side-dock { display: contents; }
+            .sky-clock-pill { grid-column: 2; grid-row: 1; align-self: start; justify-self: center; }
+            .stage-dots-bar { grid-column: 1 / -1; grid-row: 2; justify-content: center; }
+            .hud-main-grid > .fighter-hud-cluster.p1 { grid-column: 1; grid-row: 1; }
+            .hud-main-grid > div:last-child { grid-column: 3; grid-row: 1; }
+            .stage-chip { min-width: 32px; padding: 5px 6px; }
+            .sky-clock-pill { max-width: 46vw; overflow: hidden; }
+            #hudTimeText { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+            .hud-fighter-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .hill-action-floating-pill { display: none; }
+        }
+
+        /* =====================================================================
+           11. RSVP RIDE-OUT: CREDITS ABOVE A LIVE ROAD
+           ===================================================================== */
+        body.credits-mode .brawler-hud { opacity: 0; pointer-events: none; transform: translateY(-24px); }
+        body.credits-mode .floor-hud-controls { opacity: 0; pointer-events: none; transform: translate(-50%, 30px); }
+        body.credits-mode .street-ground-backdrop::before,
+        body.credits-mode .street-ground-backdrop::after { display: none; }   /* the canvas paints moving lanes instead */
+        #stage-7.fullscreen-arcade-stage { justify-content: flex-start; pointer-events: none; }
+        #stage-7 .credits-cabinet {
+            height: calc(var(--vh) * 100 - var(--floor-h) + 10px);
+            pointer-events: auto;
+            background: linear-gradient(180deg, rgba(0, 0, 0, 0.9) 0%, rgba(3, 7, 18, 0.82) 82%, rgba(3, 7, 18, 0) 100%);
+        }
+        @media (max-width: 680px) {
+            #stage-7 .credits-cabinet { height: calc(var(--vh) * 100 - var(--floor-h) + 6px); }
+        }
+
+        /* =====================================================================
+           12. PRE-NUP GALLERY & NEW YORK LIGHT-SIGN STAGE SIDEBAR
+           ===================================================================== */
+        #stage-6 .gallery-zone { max-width: min(1500px, 100%); max-height: 100%; min-height: 0; }
+        #stage-6 .gallery-billboard { max-height: none; min-height: 0; flex: 0 1 auto; padding: 14px 16px; }
+        .gallery-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .gallery-head-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .gallery-title { font-size: clamp(26px, 2.6vw, 40px); line-height: 1; }
+        .gallery-wall-grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+        .gallery-frame-card { padding: 6px; }
+        .gallery-thumb { position: relative; height: 170px; }
+        .gallery-thumb.crt img { filter: contrast(1.12) saturate(1.2); }
+        .gallery-thumb.crt::after {
+            content: ""; position: absolute; inset: 0; pointer-events: none;
+            background: repeating-linear-gradient(0deg, rgba(0,0,0,0.2) 0px, rgba(0,0,0,0.2) 1px, transparent 1px, transparent 3px);
+        }
+        .gallery-card-row { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; gap: 6px; }
+        .gallery-card-title { font-family: var(--font-comic); font-size: 19px; line-height: 1; }
+        .gallery-like { padding: 3px 7px; font-size: 10px; }
+        .lightbox-card { max-width: 1040px; }
+        .lightbox-frame { height: min(640px, calc(var(--vh) * 66)); }
+        @media (max-width: 680px) {
+            .gallery-wall-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+            .gallery-thumb { height: 120px; }
+            .gallery-card-title { font-size: 16px; }
+            .lightbox-frame { height: calc(var(--vh) * 50); }
+        }
+
+        /* Desktop: stage buttons become a vertical New York bulb-and-neon sign on the left */
+        @keyframes neonFlicker { 0%, 90%, 100% { opacity: 1; } 91% { opacity: 0.35; } 93% { opacity: 1; } 95% { opacity: 0.55; } }
+        @keyframes neonOn { 0% { opacity: 0.25; } 15% { opacity: 1; } 25% { opacity: 0.4; } 40% { opacity: 1; } 55% { opacity: 0.65; } 100% { opacity: 1; } }
+        @keyframes bulbChase { to { background-position: 7px 7px, 7px 7px; } }
+        @media (min-width: 1025px) {
+            .stage-dots-bar {
+                position: fixed;
+                left: 16px;
+                top: 50%;
+                transform: translateY(-50%);
+                flex-direction: column;
+                flex-wrap: nowrap;
+                align-items: stretch;
+                gap: 5px;
+                width: 204px;
+                padding: 34px 10px 12px;
+                background: linear-gradient(180deg, #120a1f 0%, #0b0b14 100%);
+                border: 4px solid #2a1f3d;
+                border-radius: 10px;
+                box-shadow: 0 0 0 3px #000, 0 10px 22px rgba(0,0,0,0.65), inset 0 0 22px rgba(255, 42, 133, 0.16);
+                pointer-events: auto;
+            }
+            .stage-dots-bar::before {
+                content: "★ STAGES ★";
+                position: absolute;
+                top: 10px; left: 0; right: 0;
+                text-align: center;
+                font-family: var(--font-arcade);
+                font-size: 11px;
+                color: #ffd1e8;
+                text-shadow: 0 0 3px #fff, 0 0 8px #ff2a85, 0 0 16px #ff2a85;
+                animation: neonFlicker 5s infinite;
+            }
+            /* Ring of marquee bulbs around the sign */
+            .stage-dots-bar::after {
+                content: "";
+                position: absolute;
+                inset: -11px;
+                border-radius: 15px;
+                padding: 6px;
+                pointer-events: none;
+                background:
+                    radial-gradient(circle, #fff7c2 0 2px, #fbbf24 2.5px, transparent 3.5px) 0 0 / 14px 14px,
+                    radial-gradient(circle, #7c5a10 0 2px, transparent 3px) 7px 7px / 14px 14px;
+                -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+                -webkit-mask-composite: xor;
+                mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+                animation: bulbChase 0.9s steps(2) infinite;
+                filter: drop-shadow(0 0 3px rgba(251, 191, 36, 0.8));
+            }
+            .stage-dots-bar .stage-chip {
+                --neon: #ff2a85;
+                background: rgba(255,255,255,0.02);
+                border: 2px solid rgba(255,255,255,0.06);
+                border-radius: 6px;
+                color: var(--neon);
+                opacity: 0.5;
+                text-align: left;
+                font-size: 9.5px;
+                line-height: 1.3;
+                padding: 7px 7px;
+                min-width: 0;
+                box-shadow: none;
+                transform: none;
+                text-shadow: 0 0 4px var(--neon);
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .stage-dots-bar .stage-chip .chip-label { display: inline !important; }
+            .stage-dots-bar .stage-chip:nth-child(8n+1) { --neon: #ff4fa3; }
+            .stage-dots-bar .stage-chip:nth-child(8n+2) { --neon: #38bdf8; }
+            .stage-dots-bar .stage-chip:nth-child(8n+3) { --neon: #4ade80; }
+            .stage-dots-bar .stage-chip:nth-child(8n+4) { --neon: #fde047; }
+            .stage-dots-bar .stage-chip:nth-child(8n+5) { --neon: #c084fc; }
+            .stage-dots-bar .stage-chip:nth-child(8n+6) { --neon: #fb923c; }
+            .stage-dots-bar .stage-chip:nth-child(8n+7) { --neon: #f472b6; }
+            .stage-dots-bar .stage-chip:nth-child(8n+8) { --neon: #22d3ee; }
+            .stage-dots-bar .stage-chip:hover { opacity: 0.85; border-color: rgba(255,255,255,0.18); }
+            .stage-dots-bar .stage-chip.active {
+                opacity: 1;
+                color: #ffffff;
+                background: rgba(255,255,255,0.05);
+                border-color: var(--neon);
+                text-shadow: 0 0 2px #fff, 0 0 7px var(--neon), 0 0 16px var(--neon);
+                box-shadow: 0 0 10px var(--neon), inset 0 0 10px var(--neon);
+                animation: neonOn 0.7s steps(1) 1;
+                transform: none;
+            }
+            .open-air-stage { padding-left: 242px; }
+            /* Fade the HUD without sliding it, so the fixed sidebar inside it never jumps */
+            body.in-arcade-fullscreen .brawler-hud, body.credits-mode .brawler-hud { transform: none; }
+        }
+        /* Wide desktops: pad both sides so stage content stays centred on the screen, not just right of the sidebar */
+        @media (min-width: 1600px) {
+            .open-air-stage { padding-right: 242px; }
+        }
+        @media (min-width: 1025px) and (prefers-reduced-motion: reduce) {
+            .stage-dots-bar::before, .stage-dots-bar::after, .stage-dots-bar .stage-chip.active { animation: none; }
+        }
+
+        /* =====================================================================
+           13. PHONE FIT: PLAYER SELECT HEADER & BOTTOM BAR NEVER CLIP
+           ===================================================================== */
+        .sf2-header-row > div, .sf2-bottom-bar { flex-wrap: wrap; justify-content: center; }
+        .sf2-bottom-bar .arcade-btn, .sf2-header-row .arcade-btn { white-space: normal; max-width: 100%; line-height: 1.5; }
+        @media (max-width: 680px) {
+            .sf2-header-row { justify-content: center; text-align: center; }
+            .sf2-header-row > div { width: 100%; }
+            .sf2-bottom-bar { flex-direction: column; text-align: center; }
+            .sf2-bottom-bar .arcade-btn { width: 100%; }
+        }
+
+        /* =====================================================================
+           14. SETTINGS DRAWER (BGM • FLOCK • SFX) UNDER THE STAGES SIGN
+           ===================================================================== */
+        .hud-settings { position: relative; pointer-events: auto; }
+        .settings-toggle {
+            font-family: var(--font-arcade);
+            font-size: 10px;
+            color: #e0f2fe;
+            background: rgba(15, 23, 42, 0.9);
+            border: 2px solid #38bdf8;
+            border-radius: 6px;
+            padding: 5px 9px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            box-shadow: 0 2px 0 #000;
+            text-shadow: 0 0 4px #38bdf8;
+        }
+        .settings-toggle:hover { border-color: #fff; color: #fff; }
+        .settings-gear { display: inline-block; transition: transform 0.35s ease; }
+        .hud-settings.open .settings-gear { transform: rotate(90deg); }
+        .settings-arrow { margin-left: auto; font-size: 8px; transition: transform 0.25s ease; }
+        .hud-settings.open .settings-arrow { transform: rotate(90deg); }
+        .settings-panel {
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 50%;
+            z-index: 90;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 10px;
+            background: linear-gradient(180deg, #120a1f 0%, #0b0b14 100%);
+            border: 3px solid #2a1f3d;
+            border-radius: 8px;
+            box-shadow: 0 0 0 2px #000, 0 10px 22px rgba(0,0,0,0.65), inset 0 0 14px rgba(56, 189, 248, 0.18);
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transform: translate(-50%, -8px);
+            transition: opacity 0.22s ease, transform 0.22s ease, visibility 0s linear 0.22s;
+        }
+        .hud-settings.open .settings-panel {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+            transform: translate(-50%, 0);
+            transition: opacity 0.22s ease, transform 0.22s ease;
+        }
+        .settings-opt {
+            font-family: var(--font-arcade);
+            font-size: 10px;
+            white-space: nowrap;
+            text-align: left;
+            color: #fde047;
+            background: rgba(255,255,255,0.03);
+            border: 2px solid #64748b;
+            border-radius: 5px;
+            padding: 7px 10px;
+            cursor: pointer;
+        }
+        .settings-opt:hover { border-color: #fff; color: #fff; }
+        .settings-opt.on { color: #4ade80; border-color: #4ade80; text-shadow: 0 0 6px rgba(74, 222, 128, 0.7); }
+        .settings-toggle:focus-visible, .settings-opt:focus-visible { outline: 3px solid #38bdf8; outline-offset: 2px; }
+
+        /* Desktop: the dock is the left neon sidebar; settings sit just below it and slide out to the right */
+        @media (min-width: 1025px) {
+            .hud-side-dock {
+                position: fixed;
+                left: 16px;
+                top: 50%;
+                transform: translateY(-50%);
+                display: flex;
+                flex-direction: column;
+                align-items: stretch;
+                gap: 22px;
+                width: 204px;
+            }
+            .hud-side-dock .stage-dots-bar { position: relative; left: auto; top: auto; transform: none; }
+            .settings-toggle {
+                width: 100%;
+                font-size: 11px;
+                padding: 9px 12px;
+                border: 4px solid #2a1f3d;
+                border-radius: 10px;
+                background: linear-gradient(180deg, #120a1f 0%, #0b0b14 100%);
+                box-shadow: 0 0 0 3px #000, 0 0 10px rgba(56, 189, 248, 0.35), inset 0 0 12px rgba(56, 189, 248, 0.2);
+                color: #e0f2fe;
+                text-shadow: 0 0 3px #fff, 0 0 8px #38bdf8;
+            }
+            .hud-settings.open .settings-toggle { border-color: #38bdf8; }
+            .settings-panel {
+                top: 50%;
+                left: calc(100% + 14px);
+                transform: translate(-14px, -50%);
+            }
+            .hud-settings.open .settings-panel { transform: translate(0, -50%); }
+        }
+
+        /* Phones: the gear takes the old clock pill's spot in the top row and drops its panel down */
+        @media (max-width: 680px) {
+            .hud-settings { grid-column: 2; grid-row: 1; align-self: start; justify-self: center; }
+            .settings-word { display: none; }
+            .settings-toggle { font-size: 14px; padding: 5px 9px; min-height: 34px; }
+            .settings-arrow { display: none; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .settings-panel, .settings-gear, .settings-arrow { transition: none; }
+        }
+
+        /* =====================================================================
+           15. SPREAD-OUT HUD: JERO HUGS THE LEFT EDGE, VIAH THE RIGHT
+           ===================================================================== */
+        @media (min-width: 681px) {
+            .brawler-hud { padding-left: 18px; padding-right: 18px; }
+            .hud-main-grid { max-width: none; }
+            .hud-main-grid > .fighter-hud-cluster.p1 { justify-self: start; width: 100%; }
+            .hud-main-grid > div:last-child { justify-self: end; width: 100%; }
+            .hud-main-grid > div:last-child > .fighter-hud-cluster.p2 { width: 100%; }
+            .hud-main-grid > div:last-child > .sub-companion-hud { align-items: flex-end; }
+        }
+        @media (min-width: 1025px) {
+            /* The centre column is empty on desktop (stages & settings live in the left sidebar) */
+            .hud-main-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 48px; }
+            .hud-main-grid > .hud-side-dock { grid-column: auto; }
+            .bars-column { max-width: min(560px, 34vw); }
+        }
+
+        /* Hometown line on the Player Select bio cards */
+        .sf2-bio-home {
+            display: block;
+            font-family: var(--font-arcade);
+            font-size: 10px;
+            color: #4ade80;
+            letter-spacing: 0.04em;
+            margin: 2px 0 4px;
+            text-shadow: 1px 1px 0 #000;
+        }
+
+        /* Edge-of-board hint: shows while pushing past the end of a scrolling billboard */
+        .edge-hint {
+            position: fixed;
+            left: 50%;
+            bottom: calc(var(--street-h) + 14px);
+            transform: translate(-50%, 10px);
+            z-index: 95;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            max-width: calc(100vw - 24px);
+            font-family: var(--font-arcade);
+            font-size: 10px;
+            color: #fde047;
+            text-align: center;
+            background: rgba(11, 11, 20, 0.92);
+            border: 2px solid #fde047;
+            border-radius: 8px;
+            box-shadow: 0 0 0 2px #000, 0 6px 14px rgba(0,0,0,0.6);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+        .edge-hint.show { opacity: 1; transform: translate(-50%, 0); }
+        .edge-hint-meter { width: 180px; max-width: 70vw; height: 6px; background: #334155; border: 1px solid #000; border-radius: 3px; overflow: hidden; }
+        .edge-hint-fill { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #fde047, #4ade80); transition: width 0.08s linear; }
+        .custom-scroll { transition: translate 0.16s ease-out; }
+        @media (prefers-reduced-motion: reduce) { .custom-scroll { transition: none; } }
+
+        /* Player Select start prompt, centred under the roster grid */
+        .sf2-start-cta {
+            align-self: center;
+            margin: 4px auto 0;
+            padding: 12px 20px;
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: normal;
+            max-width: 100%;
+            text-align: center;
+            animation: ctaGlow 1.6s ease-in-out infinite;
+        }
+        @keyframes ctaGlow {
+            0%, 100% { box-shadow: 0 4px 0 #000, 0 0 0 rgba(253, 224, 71, 0); }
+            50% { box-shadow: 0 4px 0 #000, 0 0 18px rgba(253, 224, 71, 0.75); }
+        }
+        @media (max-width: 680px) { .sf2-start-cta { width: 100%; font-size: 12px; padding: 12px 10px; } }
+        @media (prefers-reduced-motion: reduce) { .sf2-start-cta { animation: none; } }
+
+        /* Phones: both selected-character cards are the same height, with the bio boxes lined up */
+        @media (max-width: 680px) {
+            .sf2-arena-grid { align-items: stretch; }
+            .sf2-side-preview { height: 100%; justify-content: flex-start; }
+            .sf2-player-tag { min-height: 2.3em; display: flex; align-items: center; justify-content: center; line-height: 1.15; }
+            .sf2-fighter-big-name { min-height: 16px; white-space: nowrap; font-size: clamp(10px, 3.4vw, 13px); }
+            .sf2-big-portrait-box { flex-shrink: 0; }
+            .sf2-bio-card { flex: 1 1 auto; display: flex; flex-direction: column; }
+            .sf2-bio-card .stat-line { margin-top: auto; padding-top: 4px; }
+        }
