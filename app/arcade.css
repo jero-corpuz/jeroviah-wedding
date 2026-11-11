@@ -1871,9 +1871,38 @@
         .squad-billboard { background: #f1f5f9; border-color: #6E8AA1; }
         .squad-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
         .squad-card { background: #ffffff; border: 3px solid #000; box-shadow: 3px 3px 0 rgba(0,0,0,0.7); padding: 8px 10px; border-radius: 4px; }
+        .squad-card--full { grid-column: 1 / -1; }
+        .squad-names { display: flex; flex-direction: column; }
+        .squad-names--2col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px 16px; }
         .squad-role { font-family: var(--font-arcade); font-size: 10px; line-height: 1.5; color: #334155; margin-bottom: 5px; }
         .squad-name { font-size: 15px; font-weight: 700; color: #0f172a; line-height: 1.35; }
         .squad-name.tba { color: #94a3b8; font-style: italic; font-weight: 600; }
+        .furbearer-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
+        .furbearer-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 5px;
+            background: #f8fafc;
+            border: 2px solid #0f172a;
+            border-radius: 4px;
+            padding: 7px 6px;
+        }
+        .furbearer-portrait {
+            width: 84px;
+            height: 78px;
+            border: 2px solid #000;
+            border-radius: 3px;
+            background: #0f172a;
+            display: block;
+        }
+        .furbearer-sub {
+            font-size: 11px;
+            font-weight: 700;
+            color: #475569;
+            line-height: 1.25;
+        }
 
         /* Tablet & phone: the diorama sits right on top of its billboard instead of floating */
         @media (max-width: 1024px) {
@@ -1899,6 +1928,10 @@
             :root { --hud-h: calc(94px + var(--safe-top)); }
             .hill-stage-split .hill-diorama-box { height: calc(var(--vh) * 22); }
             .squad-grid { grid-template-columns: minmax(0, 1fr); }
+            .squad-names--2col { gap: 3px 10px; }
+            .squad-names--2col .squad-name { font-size: 13px; }
+            .furbearer-portrait { width: 68px; height: 63px; }
+            .furbearer-sub { font-size: 10px; }
 
             /* Two-row phone HUD: players + time on top, all 8 stage buttons underneath */
             .hud-main-grid { row-gap: 5px; }
