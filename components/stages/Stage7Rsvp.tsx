@@ -19,6 +19,23 @@ interface Stage7RsvpProps {
 const VALID_CLANS = new Set(["Team Jero", "Team Viah", "Both Players"]);
 const MIN_QUERY_LENGTH = 3;
 
+interface PartyMemberOption {
+  name: string;
+  role?: string;
+  status?: string;
+  isMainContact?: boolean;
+}
+
+interface SelectableGuest {
+  key: string;
+  guestName: string;
+  isCompanion: boolean;
+  party: MasterlistGuest;
+  role?: string;
+  status?: string;
+  otherPartyMembers: PartyMemberOption[];
+}
+
 function matchesGuestQuery(
   text: string,
   rawQuery: string,
@@ -31,13 +48,70 @@ function matchesGuestQuery(
   );
 }
 
+function buildSelectableGuests(masterlist: MasterlistGuest[]): SelectableGuest[] {
+  const items: SelectableGuest[] = [];
+  for (const party of masterlist) {
+    const partyPrefix = party.partyId ? `${party.partyId}::` : "";
+    const memberDetails: PartyMemberOption[] = party.companions.map((compName) => {
+      const d = party.companionDetails?.find((item) => item.name === compName);
+      return {
+        name: compName,
+        role: d?.role,
+        status: d?.status,
+      };
+    });
+
+    items.push({
+      key: `${partyPrefix}host::${party.name.toLowerCase()}`,
+      guestName: party.name,
+      isCompanion: false,
+      party,
+      role: party.role,
+      status: party.status,
+      otherPartyMembers: memberDetails,
+    });
+
+    const includeHostAsCompanion = Boolean(
+      party.hasOwnRow || party.role || party.status
+    );
+
+    for (const compName of party.companions) {
+      const detail = memberDetails.find((m) => m.name === compName);
+      const others: PartyMemberOption[] = [];
+      if (includeHostAsCompanion) {
+        others.push({
+          name: party.name,
+          role: party.role,
+          status: party.status,
+          isMainContact: true,
+        });
+      }
+      for (const m of memberDetails) {
+        if (m.name.toLowerCase() !== compName.toLowerCase()) {
+          others.push(m);
+        }
+      }
+      items.push({
+        key: `${partyPrefix}member::${compName.toLowerCase()}`,
+        guestName: compName,
+        isCompanion: true,
+        party,
+        role: detail?.role,
+        status: detail?.status,
+        otherPartyMembers: others,
+      });
+    }
+  }
+  return items;
+}
+
 export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
   const [masterlist, setMasterlist] = useState<MasterlistGuest[]>([]);
   const [masterlistLoading, setMasterlistLoading] = useState(true);
   const [masterlistError, setMasterlistError] = useState<string | null>(null);
 
   const [name, setName] = useState("");
-  const [selectedGuest, setSelectedGuest] = useState<MasterlistGuest | null>(null);
+  const [selectedGuest, setSelectedGuest] = useState<SelectableGuest | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(0);
   const [notFoundError, setNotFoundError] = useState(false);
@@ -136,55 +210,67 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
   const strippedQuery = stripHonorific(name).toLowerCase();
   const hasMinQuery = rawQuery.length >= MIN_QUERY_LENGTH;
 
+  const selectableGuests = useMemo(
+    () => buildSelectableGuests(masterlist),
+    [masterlist]
+  );
+
   const suggestions = useMemo(() => {
     if (!hasMinQuery) return [];
-    const list = masterlist.filter(
-      (g) =>
-        matchesGuestQuery(g.name, rawQuery, strippedQuery) ||
-        g.companions.some((c) => matchesGuestQuery(c, rawQuery, strippedQuery))
+    const matched = selectableGuests.filter((entry) =>
+      matchesGuestQuery(entry.guestName, rawQuery, strippedQuery)
     );
-    return list.slice(0, 12);
-  }, [masterlist, hasMinQuery, rawQuery, strippedQuery]);
+    matched.sort((a, b) => {
+      const aStart =
+        a.guestName.toLowerCase().startsWith(rawQuery) ||
+        (strippedQuery.length > 0 &&
+          stripHonorific(a.guestName).toLowerCase().startsWith(strippedQuery));
+      const bStart =
+        b.guestName.toLowerCase().startsWith(rawQuery) ||
+        (strippedQuery.length > 0 &&
+          stripHonorific(b.guestName).toLowerCase().startsWith(strippedQuery));
+      if (aStart !== bStart) return aStart ? -1 : 1;
+      if (a.isCompanion !== b.isCompanion) return a.isCompanion ? 1 : -1;
+      return 0;
+    });
+    return matched.slice(0, 20);
+  }, [selectableGuests, hasMinQuery, rawQuery, strippedQuery]);
 
-  const findExactGuest = (value: string): MasterlistGuest | null => {
+  const findExactGuest = (value: string): SelectableGuest | null => {
     const q = value.trim().toLowerCase();
     if (!q) return null;
-    const direct = masterlist.find((g) => g.name.trim().toLowerCase() === q);
-    if (direct) return direct;
+    const direct = selectableGuests.filter(
+      (e) => e.guestName.trim().toLowerCase() === q
+    );
+    if (direct.length === 1) return direct[0];
 
     const stripped = stripHonorific(value).toLowerCase();
     if (!stripped) return null;
-    const strippedMatches = masterlist.filter(
-      (g) => stripHonorific(g.name).toLowerCase() === stripped
+    const strippedMatches = selectableGuests.filter(
+      (e) => stripHonorific(e.guestName).toLowerCase() === stripped
     );
     return strippedMatches.length === 1 ? strippedMatches[0] : null;
   };
 
-  const getPreconfirmedCompanions = (guest: MasterlistGuest): string[] =>
-    guest.companions.filter((comp) => {
-      const st = guest.companionDetails?.find((d) => d.name === comp)?.status;
-      return st?.trim().toLowerCase() === "confirmed";
-    });
-
-  const selectMasterlistGuest = (guest: MasterlistGuest) => {
-    setName(guest.name);
-    setSelectedGuest(guest);
-    setSelectedCompanions(getPreconfirmedCompanions(guest));
-    setCompanionsOpen(guest.companions.length > 0);
+  const selectMasterlistGuest = (entry: SelectableGuest) => {
+    setName(entry.guestName);
+    setSelectedGuest(entry);
+    setSelectedCompanions([]);
+    setCompanionsOpen(!entry.isCompanion && entry.otherPartyMembers.length > 0);
     setDropdownOpen(false);
     setNotFoundError(false);
     setSubmitError(null);
-    const normalizedStatus = guest.status?.trim().toLowerCase();
+    const normalizedStatus = entry.status?.trim().toLowerCase();
     if (normalizedStatus === "declined") {
       setAttendance("regrets");
     } else if (normalizedStatus === "confirmed") {
       setAttendance("attending");
     }
-    if (guest.clan && VALID_CLANS.has(guest.clan)) {
-      setClan(guest.clan);
+    if (entry.party.clan && VALID_CLANS.has(entry.party.clan)) {
+      setClan(entry.party.clan);
     }
-    if (guest.email && !email) {
-      setEmail(guest.email);
+    if (entry.party.email && !email) {
+      setEmail(entry.party.email);
     }
   };
 
@@ -206,15 +292,11 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
     const exact = findExactGuest(value);
     if (exact) {
       setSelectedGuest(exact);
-      setCompanionsOpen(exact.companions.length > 0);
-      setSelectedCompanions((prev) => {
-        const validPrev = prev.filter((c) => exact.companions.includes(c));
-        return validPrev.length > 0
-          ? validPrev
-          : getPreconfirmedCompanions(exact);
-      });
-      if (exact.clan && VALID_CLANS.has(exact.clan)) {
-        setClan(exact.clan);
+      setCompanionsOpen(!exact.isCompanion && exact.otherPartyMembers.length > 0);
+      const validNames = new Set(exact.otherPartyMembers.map((m) => m.name));
+      setSelectedCompanions((prev) => prev.filter((c) => validNames.has(c)));
+      if (exact.party.clan && VALID_CLANS.has(exact.party.clan)) {
+        setClan(exact.party.clan);
       }
     } else {
       setSelectedGuest(null);
@@ -279,25 +361,21 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
       ? "Declined"
       : "Confirmed";
     const addedGuests = isRegrets ? [] : selectedCompanions;
-    const declinedGuests = isRegrets
-      ? matched.companions
-      : matched.companions.filter((c) => !addedGuests.includes(c));
+    const declinedGuests = isRegrets ? [matched.guestName] : [];
     const updates: Array<{
       party_id?: string;
       guest_name: string;
       status: "Confirmed" | "Declined";
     }> = [
       {
-        party_id: matched.partyId,
-        guest_name: matched.name,
+        party_id: matched.party.partyId,
+        guest_name: matched.guestName,
         status: primaryStatus,
       },
-      ...matched.companions.map((comp) => ({
-        party_id: matched.partyId,
+      ...addedGuests.map((comp) => ({
+        party_id: matched.party.partyId,
         guest_name: comp,
-        status: (addedGuests.includes(comp) ? "Confirmed" : "Declined") as
-          | "Confirmed"
-          | "Declined",
+        status: "Confirmed" as const,
       })),
     ];
     const guestCount = addedGuests.length;
@@ -311,11 +389,11 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
     setSubmitting(true);
     try {
       await submitRsvpEntry({
-        partyId: matched.partyId,
-        party_id: matched.partyId,
-        main_contact: matched.name,
+        partyId: matched.party.partyId,
+        party_id: matched.party.partyId,
+        main_contact: matched.party.name,
         party: partyLabel,
-        name: matched.name,
+        name: matched.guestName,
         email: email.trim(),
         attendance,
         status: primaryStatus,
@@ -333,14 +411,14 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
       );
       setMasterlist((prev) =>
         prev.map((g) => {
-          const sameParty = matched.partyId
-            ? g.partyId === matched.partyId &&
-              g.name.toLowerCase() === matched.name.toLowerCase()
-            : g.name.toLowerCase() === matched.name.toLowerCase();
+          const sameParty = matched.party.partyId
+            ? g.partyId === matched.party.partyId &&
+              g.name.toLowerCase() === matched.party.name.toLowerCase()
+            : g.name.toLowerCase() === matched.party.name.toLowerCase();
           if (!sameParty) return g;
           return {
             ...g,
-            status: primaryStatus,
+            status: statusByGuest.get(g.name.toLowerCase()) ?? g.status,
             companionDetails: g.companionDetails
               ? g.companionDetails.map((d) => ({
                   ...d,
@@ -358,7 +436,7 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
       addBrawlerScore(500, 999);
 
       const member: PartyMember = {
-        name: matched.name,
+        name: matched.guestName,
         party: partyLabel,
         clan,
         msg: msg.trim(),
@@ -454,7 +532,7 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
     </div>
   );
 
-  const companionCount = selectedGuest?.companions.length ?? 0;
+  const companionCount = selectedGuest?.otherPartyMembers.length ?? 0;
   const activeAddedCount = attendance === "regrets" ? 0 : selectedCompanions.length;
 
   return (
@@ -523,55 +601,44 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
                       role="listbox"
                     >
                       {suggestions.length > 0 ? (
-                        suggestions.map((guest, idx) => {
-                          const matchedViaCompanion =
-                            rawQuery.length > 0 &&
-                            !matchesGuestQuery(
-                              guest.name,
-                              rawQuery,
-                              strippedQuery
-                            )
-                              ? guest.companions.filter((c) =>
-                                  matchesGuestQuery(c, rawQuery, strippedQuery)
-                                )
-                              : [];
+                        suggestions.map((entry, idx) => {
                           const countLabel =
-                            guest.companions.length > 0
-                              ? `+${guest.companions.length} LISTED`
-                              : "SOLO PASS";
-                          const itemKey = guest.partyId
-                            ? `${guest.partyId}-${guest.name}`
-                            : guest.name;
+                            !entry.isCompanion && entry.otherPartyMembers.length > 0
+                              ? `+${entry.otherPartyMembers.length} LISTED`
+                              : !entry.isCompanion
+                                ? "SOLO PASS"
+                                : null;
 
                           return (
                             <button
-                              key={itemKey}
+                              key={entry.key}
                               type="button"
                               role="option"
                               aria-selected={
-                                selectedGuest?.name === guest.name &&
-                                selectedGuest?.partyId === guest.partyId
-                                  ? "true"
-                                  : "false"
+                                selectedGuest?.key === entry.key ? "true" : "false"
                               }
                               className={`rsvp-autofill-item${
                                 idx === highlightIndex ? " highlighted" : ""
                               }`}
                               onMouseDown={(e) => {
                                 e.preventDefault();
-                                selectMasterlistGuest(guest);
+                                selectMasterlistGuest(entry);
                               }}
                             >
                               <span className="rsvp-autofill-main">
-                                <span>{guest.name}</span>
-                                {matchedViaCompanion.length > 0 && (
+                                <span>{entry.guestName}</span>
+                                {entry.isCompanion && (
                                   <span className="rsvp-autofill-sub">
-                                    Includes: {matchedViaCompanion.join(", ")}
+                                    Party: {entry.party.name}
                                   </span>
                                 )}
                               </span>
                               <span className="rsvp-autofill-tag">
-                                {[guest.category, countLabel, guest.status]
+                                {[
+                                  entry.role || entry.party.category,
+                                  countLabel,
+                                  entry.status,
+                                ]
                                   .filter(Boolean)
                                   .join(" • ")}
                               </span>
@@ -634,9 +701,14 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
 
                   {selectedGuest && (
                     <div className="rsvp-hint-line ok">
-                      ✅ VERIFIED ON MASTERLIST: {selectedGuest.name}
-                      {selectedGuest.category
-                        ? ` (${selectedGuest.category})`
+                      ✅ VERIFIED ON MASTERLIST: {selectedGuest.guestName}
+                      {selectedGuest.role
+                        ? ` (${selectedGuest.role})`
+                        : selectedGuest.party.category
+                          ? ` (${selectedGuest.party.category})`
+                          : ""}
+                      {selectedGuest.isCompanion
+                        ? ` • PARTY: ${selectedGuest.party.name}`
                         : ""}
                       {selectedGuest.status
                         ? ` • STATUS: ${selectedGuest.status.toUpperCase()}`
@@ -671,7 +743,9 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
                 {selectedGuest && (
                   <div className="rsvp-wide">
                     <label className="brawler-label">
-                      2. WHO WILL YOU TAKE? (GUESTS UNDER YOUR NAME)
+                      {selectedGuest.isCompanion
+                        ? "2. ALSO CONFIRM OTHER PARTY MEMBERS? (OPTIONAL)"
+                        : "2. WHO WILL YOU TAKE? (PARTY MEMBERS)"}
                     </label>
                     {companionCount > 0 ? (
                       <div
@@ -688,10 +762,12 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
                         >
                           <span>
                             {attendance === "regrets"
-                              ? "💌 REGRETS SELECTED — 0 GUESTS ADDED"
-                              : `☑️ ${activeAddedCount} OF ${companionCount} COMPANION${
-                                  companionCount === 1 ? "" : "S"
-                                } CHECKED (PARTY: ${1 + activeAddedCount})`}
+                              ? "💌 REGRETS FOR YOU ONLY — OTHER PARTY MEMBERS UNCHANGED"
+                              : activeAddedCount === 0
+                                ? `☑️ JUST ME (1P SOLO) — ${companionCount} OTHER IN PARTY (CLICK TO ADD)`
+                                : `☑️ ${activeAddedCount} OF ${companionCount} PARTY MEMBER${
+                                    companionCount === 1 ? "" : "S"
+                                  } CHECKED (PARTY: ${1 + activeAddedCount})`}
                           </span>
                           <span>{companionsOpen ? "▲" : "▼"}</span>
                         </button>
@@ -699,13 +775,15 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
                         {companionsOpen && (
                           <div className="rsvp-companions-menu custom-scroll">
                             <div className="rsvp-companions-tools">
-                              <span>Check all guests coming with you:</span>
+                              <span>Optional: check any others coming with you (unchecked guests stay as-is):</span>
                               <div style={{ display: "flex", gap: "4px" }}>
                                 <button
                                   type="button"
                                   disabled={attendance === "regrets"}
                                   onClick={() =>
-                                    setSelectedCompanions([...selectedGuest.companions])
+                                    setSelectedCompanions(
+                                      selectedGuest.otherPartyMembers.map((m) => m.name)
+                                    )
                                   }
                                 >
                                   SELECT ALL
@@ -720,16 +798,12 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
                               </div>
                             </div>
                             <div className="rsvp-companion-list">
-                              {selectedGuest.companions.map((comp, cIdx) => {
+                              {selectedGuest.otherPartyMembers.map((member, cIdx) => {
                                 const checked =
                                   attendance !== "regrets" &&
-                                  selectedCompanions.includes(comp);
-                                const detail =
-                                  selectedGuest.companionDetails?.find(
-                                    (d) => d.name === comp
-                                  );
-                                const detailRole = detail?.role;
-                                const detailStatus = detail?.status;
+                                  selectedCompanions.includes(member.name);
+                                const detailRole = member.role;
+                                const detailStatus = member.status;
                                 const statusSlug = detailStatus
                                   ? detailStatus
                                       .toLowerCase()
@@ -737,7 +811,7 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
                                   : "";
                                 return (
                                   <label
-                                    key={`${comp}-${cIdx}`}
+                                    key={`${member.name}-${cIdx}`}
                                     className={`rsvp-companion-opt${
                                       checked ? " checked" : ""
                                     }`}
@@ -746,10 +820,10 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
                                       type="checkbox"
                                       checked={checked}
                                       disabled={attendance === "regrets"}
-                                      onChange={() => toggleCompanion(comp)}
+                                      onChange={() => toggleCompanion(member.name)}
                                     />
                                     <span className="rsvp-companion-info">
-                                      <span>{comp}</span>
+                                      <span>{member.name}</span>
                                       {(detailRole || detailStatus) && (
                                         <span className="rsvp-companion-role">
                                           {detailRole ? `(${detailRole})` : ""}
@@ -773,7 +847,7 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
                       </div>
                     ) : (
                       <div className="rsvp-hint-line info">
-                        🎫 1P SOLO PASS — no extra guests listed under your name.
+                        🎫 1P SOLO PASS — no extra guests listed under your party.
                       </div>
                     )}
                   </div>

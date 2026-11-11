@@ -248,6 +248,7 @@ function normalizeRecord(rec: Record<string, unknown>): MasterlistGuest | null {
     role: isCompanionRow ? undefined : role,
     category,
     status: isCompanionRow ? undefined : status,
+    hasOwnRow: !isCompanionRow,
     companions,
     companionDetails,
     clan: clan || mapCategoryToClan(category),
@@ -323,6 +324,7 @@ function mergeMasterlistGuests(entries: MasterlistGuest[]): MasterlistGuest[] {
       if (!existing.role && entry.role) existing.role = entry.role;
       if (!existing.category && entry.category) existing.category = entry.category;
       if (!existing.status && entry.status) existing.status = entry.status;
+      if (!existing.hasOwnRow && entry.hasOwnRow) existing.hasOwnRow = true;
       if (!existing.clan && entry.clan) existing.clan = entry.clan;
       if (!existing.email && entry.email) existing.email = entry.email;
     }

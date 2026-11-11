@@ -34,6 +34,7 @@ export interface MasterlistGuest {
   role?: string;
   category?: string;
   status?: string;
+  hasOwnRow?: boolean;
   companions: string[];
   companionDetails?: MasterlistCompanion[];
   clan?: string;
