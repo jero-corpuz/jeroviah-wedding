@@ -508,27 +508,7 @@ export default function Stage7Rsvp({
             ◀ BACK
           </button>
           <h2 className="credits-title">★ THE END? NOT YET! ★</h2>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-            <span className="credits-sub">AUTO-SYNC: 15M</span>
-            <button
-              type="button"
-              id="creditsSyncBtn"
-              onClick={() => void syncMasterlist({ silent: true })}
-              disabled={isSyncing}
-              title="Sync roll credits and masterlist from Google Sheets now"
-              style={{
-                fontFamily: "var(--font-arcade)",
-                fontSize: "9px",
-                color: "#fde047",
-                background: "rgba(30, 58, 138, 0.75)",
-                border: "2px solid #38bdf8",
-                padding: "4px 8px",
-                cursor: isSyncing ? "wait" : "pointer",
-              }}
-            >
-              {isSyncing ? "⏳ SYNCING…" : "🔄 SYNC CREDITS"}
-            </button>
-          </div>
+          <span className="credits-sub">RSVP TO JOIN THE CREDITS</span>
         </div>
 
         <div className="credits-grid">
