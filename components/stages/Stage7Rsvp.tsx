@@ -9,7 +9,7 @@ import { stripHonorific, submitRsvpEntry } from "@/lib/arcade/masterlist";
 
 interface Stage7RsvpProps {
   roster: PartyMember[];
-  onRsvpSuccess: (data: PartyMember) => void;
+  onRsvpSuccess: (data: PartyMember, opts?: { mode?: "local" | "remote" }) => void;
   masterlist: MasterlistGuest[];
   setMasterlist: React.Dispatch<React.SetStateAction<MasterlistGuest[]>>;
   masterlistLoading: boolean;
@@ -204,6 +204,17 @@ export default function Stage7Rsvp({
     if (entry.party.email && !email) {
       setEmail(entry.party.email);
     }
+    const existingCredit = roster.find(
+      (r) => r.name.trim().toLowerCase() === entry.guestName.trim().toLowerCase()
+    );
+    if (existingCredit) {
+      if (!msg.trim() && existingCredit.msg) {
+        setMsg(existingCredit.msg);
+      }
+      if (existingCredit.clan && VALID_CLANS.has(existingCredit.clan)) {
+        setClan(existingCredit.clan);
+      }
+    }
   };
 
   const handleNameChange = (value: string) => {
@@ -317,7 +328,7 @@ export default function Stage7Rsvp({
 
     setSubmitting(true);
     try {
-      await submitRsvpEntry({
+      const submitResult = await submitRsvpEntry({
         action: "update_status",
         partyId: matched.party.partyId,
         party_id: matched.party.partyId,
@@ -377,8 +388,12 @@ export default function Stage7Rsvp({
         isNew: true,
       };
 
-      onRsvpSuccess(member);
+      onRsvpSuccess(member, submitResult);
       setRollCycle((c) => c + 1);
+
+      if (submitResult.mode === "remote") {
+        void syncMasterlist({ silent: true });
+      }
 
       setName("");
       setSelectedGuest(null);

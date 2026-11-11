@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchMasterlist } from "@/lib/arcade/masterlist";
-import { MasterlistGuest } from "@/lib/arcade/types";
+import { MasterlistGuest, PartyMember } from "@/lib/arcade/types";
 
 export interface UseMasterlistResult {
   masterlist: MasterlistGuest[];
   setMasterlist: React.Dispatch<React.SetStateAction<MasterlistGuest[]>>;
+  messages: PartyMember[];
+  messagesSupported: boolean;
   loading: boolean;
   error: string | null;
   isSyncing: boolean;
@@ -16,6 +18,8 @@ export interface UseMasterlistResult {
 
 export function useMasterlist(): UseMasterlistResult {
   const [masterlist, setMasterlist] = useState<MasterlistGuest[]>([]);
+  const [messages, setMessages] = useState<PartyMember[]>([]);
+  const [messagesSupported, setMessagesSupported] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -32,8 +36,14 @@ export function useMasterlist(): UseMasterlistResult {
     setError(null);
 
     try {
-      const { guests } = await fetchMasterlist();
+      const {
+        guests,
+        messages: nextMessages,
+        messagesSupported: nextSupported,
+      } = await fetchMasterlist();
       setMasterlist(guests);
+      setMessages(nextMessages);
+      setMessagesSupported(nextSupported);
       lastFetchedRef.current = Date.now();
     } catch (err) {
       if (!silent) {
@@ -60,9 +70,11 @@ export function useMasterlist(): UseMasterlistResult {
   useEffect(() => {
     let active = true;
     fetchMasterlist()
-      .then(({ guests }) => {
+      .then(({ guests, messages: nextMessages, messagesSupported: nextSupported }) => {
         if (!active) return;
         setMasterlist(guests);
+        setMessages(nextMessages);
+        setMessagesSupported(nextSupported);
         lastFetchedRef.current = Date.now();
         setLoading(false);
       })
@@ -106,6 +118,8 @@ export function useMasterlist(): UseMasterlistResult {
   return {
     masterlist,
     setMasterlist,
+    messages,
+    messagesSupported,
     loading,
     error,
     isSyncing,

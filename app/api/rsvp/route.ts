@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   normalizeSheetUrl,
-  parseMasterlistText,
+  parseMasterlistPayload,
   RsvpSubmissionPayload,
 } from "@/lib/arcade/masterlist";
 
@@ -77,7 +77,11 @@ export async function GET(request: Request) {
       }
     }
 
-    const parsed = parseMasterlistText(rawText);
+    const {
+      guests: parsed,
+      messages: parsedMessages,
+      messagesSupported,
+    } = parseMasterlistPayload(rawText);
     if (
       parsed.length === 0 &&
       /"data"\s*:\s*\[\s*\{[^}]*""\s*:/.test(rawText)
@@ -96,6 +100,18 @@ export async function GET(request: Request) {
       return rest;
     });
 
+    const messages = parsedMessages.map((entry) => ({
+      name: entry.name,
+      party: entry.party,
+      clan: entry.clan,
+      msg: entry.msg,
+      ...(entry.attendance ? { attendance: entry.attendance } : {}),
+      ...(typeof entry.guestCount === "number" ? { guestCount: entry.guestCount } : {}),
+      ...(entry.addedGuests && entry.addedGuests.length > 0
+        ? { addedGuests: entry.addedGuests }
+        : {}),
+    }));
+
     const guests = queryFilter
       ? sanitized.filter(
           (g) =>
@@ -105,7 +121,7 @@ export async function GET(request: Request) {
       : sanitized;
 
     return Response.json(
-      { guests },
+      { guests, messages, messagesSupported },
       {
         headers: {
           "Cache-Control": "no-store, max-age=0",

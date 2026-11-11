@@ -1,4 +1,4 @@
-import { MasterlistCompanion, MasterlistGuest } from './types';
+import { MasterlistCompanion, MasterlistGuest, PartyMember } from './types';
 
 export const DEFAULT_MASTERLIST_URL = '/api/rsvp';
 
@@ -386,8 +386,104 @@ export function parseMasterlistText(rawText: string): MasterlistGuest[] {
   return mergeMasterlistGuests(guests);
 }
 
+function normalizeRsvpMessages(rawMessages: unknown): PartyMember[] {
+  if (!Array.isArray(rawMessages)) return [];
+  const seen = new Set<string>();
+  const out: PartyMember[] = [];
+
+  for (const item of rawMessages) {
+    if (!item || typeof item !== 'object') continue;
+    const rec = item as Record<string, unknown>;
+    const name = String(rec.name ?? rec.guest_name ?? '').trim();
+    const msg = String(rec.msg ?? rec.message ?? '').trim();
+    if (!name || !msg) continue;
+
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const rawAdded = rec.addedGuests ?? rec.added_guests;
+    const addedGuests = Array.isArray(rawAdded)
+      ? dedupeNames(rawAdded.map((v) => String(v ?? '').trim()))
+      : typeof rawAdded === 'string' && rawAdded.trim()
+        ? splitCompanionList(rawAdded)
+        : [];
+
+    const attendanceRaw = String(rec.attendance ?? '').trim().toLowerCase();
+    const attendance =
+      attendanceRaw === 'regrets' || attendanceRaw === 'declined'
+        ? 'regrets'
+        : attendanceRaw === 'attending' || attendanceRaw === 'confirmed'
+          ? 'attending'
+          : undefined;
+
+    const rawCount = rec.guestCount ?? rec.guest_count;
+    const parsedCount =
+      typeof rawCount === 'number'
+        ? rawCount
+        : typeof rawCount === 'string' && rawCount.trim() !== ''
+          ? Number(rawCount)
+          : NaN;
+    const guestCount =
+      Number.isFinite(parsedCount) && parsedCount >= 0
+        ? Math.floor(parsedCount)
+        : addedGuests.length;
+
+    const party =
+      String(rec.party ?? '').trim() ||
+      (attendance === 'regrets'
+        ? '0P (REGRETS)'
+        : guestCount > 0
+          ? `${1 + guestCount}P (+${guestCount} ${guestCount === 1 ? 'GUEST' : 'GUESTS'})`
+          : '1P (SOLO)');
+
+    const clan = String(rec.clan ?? '').trim() || 'Both Players';
+
+    out.push({
+      name,
+      party,
+      clan,
+      msg,
+      attendance,
+      guestCount,
+      addedGuests
+    });
+  }
+
+  return out;
+}
+
+export function parseMasterlistPayload(rawText: string): {
+  guests: MasterlistGuest[];
+  messages: PartyMember[];
+  messagesSupported: boolean;
+} {
+  const guests = parseMasterlistText(rawText);
+  const trimmed = rawText.replace(/^\uFEFF/, '').trim();
+  if (!trimmed.startsWith('{')) {
+    return { guests, messages: [], messagesSupported: false };
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const obj = parsed as Record<string, unknown>;
+      const messagesSupported =
+        obj.messagesSupported === true || Array.isArray(obj.messages);
+      const messages = normalizeRsvpMessages(obj.messages);
+      return { guests, messages, messagesSupported };
+    }
+  } catch {
+    // Fallback when text wasn't a JSON object
+  }
+
+  return { guests, messages: [], messagesSupported: false };
+}
+
 export async function fetchMasterlist(url?: string): Promise<{
   guests: MasterlistGuest[];
+  messages: PartyMember[];
+  messagesSupported: boolean;
   source: string;
 }> {
   const targetUrl = url ? normalizeSheetUrl(url) : getMasterlistUrl();
@@ -403,8 +499,8 @@ export async function fetchMasterlist(url?: string): Promise<{
     throw new Error(errMsg);
   }
   const text = await res.text();
-  const guests = parseMasterlistText(text);
-  return { guests, source: targetUrl };
+  const { guests, messages, messagesSupported } = parseMasterlistPayload(text);
+  return { guests, messages, messagesSupported, source: targetUrl };
 }
 
 export interface RsvpGuestStatusUpdate {
@@ -433,9 +529,11 @@ export interface RsvpSubmissionPayload {
   msg: string;
 }
 
-export async function submitRsvpEntry(payload: RsvpSubmissionPayload): Promise<void> {
+export async function submitRsvpEntry(
+  payload: RsvpSubmissionPayload
+): Promise<{ mode?: 'local' | 'remote' }> {
   const submitUrl = getRsvpSubmitUrl();
-  if (!submitUrl) return;
+  if (!submitUrl) return { mode: 'local' };
 
   const res = await fetch(submitUrl, {
     method: 'POST',
@@ -451,6 +549,13 @@ export async function submitRsvpEntry(payload: RsvpSubmissionPayload): Promise<v
       // Keep status-based fallback message
     }
     throw new Error(errMsg);
+  }
+
+  try {
+    const body = (await res.json()) as { mode?: 'local' | 'remote' };
+    return { mode: body?.mode };
+  } catch {
+    return {};
   }
 }
 

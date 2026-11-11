@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import SkyCanvas from "@/components/canvas/SkyCanvas";
 import FloorCanvas from "@/components/canvas/FloorCanvas";
 import BrawlerHud from "@/components/hud/BrawlerHud";
@@ -31,6 +31,19 @@ import { useMasterlist } from "@/lib/arcade/useMasterlist";
 const GALLERY_LIKES_STORAGE_KEY = "jero_viah_gallery_likes_v1";
 const RSVP_ROSTER_STORAGE_KEY = "jero_viah_rsvp_roster_v1";
 
+function mergePartyEntries(entries: PartyMember[]): PartyMember[] {
+  const seen = new Set<string>();
+  const merged: PartyMember[] = [];
+  for (const entry of entries) {
+    if (!entry?.name) continue;
+    const key = entry.name.trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(entry);
+  }
+  return merged;
+}
+
 export default function WeddingPage() {
   const [mapModalOpen, setMapModalOpen] = useState(false);
   const [comicModalOpen, setComicModalOpen] = useState(false);
@@ -42,9 +55,12 @@ export default function WeddingPage() {
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>(() => [...gameState.galleryItems]);
   const [crtMode, setCrtMode] = useState<boolean>(true);
   const [partyRoster, setPartyRoster] = useState<PartyMember[]>(() => [...gameState.partyRoster]);
+  const lastSubmittedNameRef = useRef<string | null>(null);
   const {
     masterlist,
     setMasterlist,
+    messages,
+    messagesSupported,
     loading: masterlistLoading,
     error: masterlistError,
     isSyncing,
@@ -83,21 +99,15 @@ export default function WeddingPage() {
       }
 
       try {
-        const rawRsvps = window.localStorage.getItem(RSVP_ROSTER_STORAGE_KEY);
-        if (rawRsvps) {
-          const savedRsvps = JSON.parse(rawRsvps) as PartyMember[];
-          if (Array.isArray(savedRsvps) && savedRsvps.length > 0) {
-            const seen = new Set<string>();
-            const merged: PartyMember[] = [];
-            for (const entry of [...savedRsvps, ...DEFAULT_ROSTER]) {
-              if (!entry?.name) continue;
-              const key = entry.name.trim().toLowerCase();
-              if (seen.has(key)) continue;
-              seen.add(key);
-              merged.push(entry);
+        if (!messagesSupported) {
+          const rawRsvps = window.localStorage.getItem(RSVP_ROSTER_STORAGE_KEY);
+          if (rawRsvps) {
+            const savedRsvps = JSON.parse(rawRsvps) as PartyMember[];
+            if (Array.isArray(savedRsvps) && savedRsvps.length > 0) {
+              const merged = mergePartyEntries([...savedRsvps, ...DEFAULT_ROSTER]);
+              setPartyRoster(merged);
+              gameState.partyRoster = merged;
             }
-            setPartyRoster(merged);
-            gameState.partyRoster = merged;
           }
         }
       } catch {
@@ -111,7 +121,22 @@ export default function WeddingPage() {
       window.cancelAnimationFrame(raf);
       window.removeEventListener("storage", loadSavedState);
     };
-  }, []);
+  }, [messagesSupported]);
+
+  useEffect(() => {
+    if (!messagesSupported) return;
+    const highlightKey = lastSubmittedNameRef.current;
+    const decorated = messages.map((entry) => ({
+      ...entry,
+      isNew: Boolean(highlightKey && entry.name.trim().toLowerCase() === highlightKey),
+    }));
+    const merged = mergePartyEntries([...decorated, ...DEFAULT_ROSTER]);
+    const raf = window.requestAnimationFrame(() => {
+      setPartyRoster(merged);
+      gameState.partyRoster = merged;
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [messages, messagesSupported]);
 
   const handleToggleCrt = useCallback(() => {
     playSfx("blip");
@@ -162,45 +187,48 @@ export default function WeddingPage() {
     }
   }, [galleryItems, lightboxIndex, handleLikeItem]);
 
-  const handleRsvpSuccess = useCallback((newMember: PartyMember) => {
-    setPartyRoster((prev) => {
-      const targetKey = newMember.name.trim().toLowerCase();
-      const filtered = prev
-        .filter((p) => p.name.trim().toLowerCase() !== targetKey)
-        .map((p) => ({ ...p, isNew: false }));
-      const next = [newMember, ...filtered];
-      gameState.partyRoster = next;
+  const handleRsvpSuccess = useCallback(
+    (newMember: PartyMember, opts?: { mode?: "local" | "remote" }) => {
+      lastSubmittedNameRef.current = newMember.name.trim().toLowerCase();
+      setPartyRoster((prev) => {
+        const cleared = prev.map((p) => ({ ...p, isNew: false }));
+        const next = mergePartyEntries([newMember, ...cleared]);
+        gameState.partyRoster = next;
 
-      try {
-        const defaultNames = new Set(
-          DEFAULT_ROSTER.map((d) => d.name.trim().toLowerCase())
-        );
-        const customEntries = next.filter(
-          (p) => p.isNew || !defaultNames.has(p.name.trim().toLowerCase())
-        );
-        window.localStorage.setItem(
-          RSVP_ROSTER_STORAGE_KEY,
-          JSON.stringify(customEntries)
-        );
-      } catch {
-        // Ignore localStorage write errors
-      }
-      return next;
-    });
+        if (!messagesSupported || opts?.mode === "local") {
+          try {
+            const defaultNames = new Set(
+              DEFAULT_ROSTER.map((d) => d.name.trim().toLowerCase())
+            );
+            const customEntries = next.filter(
+              (p) => p.isNew || !defaultNames.has(p.name.trim().toLowerCase())
+            );
+            window.localStorage.setItem(
+              RSVP_ROSTER_STORAGE_KEY,
+              JSON.stringify(customEntries)
+            );
+          } catch {
+            // Ignore localStorage write errors
+          }
+        }
+        return next;
+      });
 
-    const status =
-      newMember.attendance === "regrets"
-        ? "cheering from afar"
-        : "locked in for Feb 12, 2027";
-    const guestsNote =
-      newMember.addedGuests && newMember.addedGuests.length > 0
-        ? ` — taking ${newMember.addedGuests.join(", ")}`
-        : "";
-    setRsvpSummary(
-      `${newMember.name} (${newMember.party} • ${newMember.clan}) is ${status}${guestsNote}!`
-    );
-    setRsvpSuccessOpen(true);
-  }, []);
+      const status =
+        newMember.attendance === "regrets"
+          ? "cheering from afar"
+          : "locked in for Feb 12, 2027";
+      const guestsNote =
+        newMember.addedGuests && newMember.addedGuests.length > 0
+          ? ` — taking ${newMember.addedGuests.join(", ")}`
+          : "";
+      setRsvpSummary(
+        `${newMember.name} (${newMember.party} • ${newMember.clan}) is ${status}${guestsNote}!`
+      );
+      setRsvpSuccessOpen(true);
+    },
+    [messagesSupported]
+  );
 
   // Expose global window hooks so keyboard listeners and existing click events can trigger modals seamlessly
   useEffect(() => {
