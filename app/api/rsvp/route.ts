@@ -152,7 +152,22 @@ export async function POST(request: Request) {
       return Response.json({ ok: true, mode: "local" });
     }
 
-    const upstream = await fetch(submitUrl, {
+    // Mirror core guest fields onto query params as well as JSON body so
+    // Apps Script doPost(e) works whether it reads e.postData.contents or e.parameter.
+    const upstreamUrl = new URL(submitUrl);
+    upstreamUrl.searchParams.set("guest_name", primaryGuestName);
+    upstreamUrl.searchParams.set("name", primaryGuestName);
+    if (upstreamPayload.party_id) {
+      upstreamUrl.searchParams.set("party_id", upstreamPayload.party_id);
+    }
+    if (upstreamPayload.main_contact) {
+      upstreamUrl.searchParams.set("main_contact", upstreamPayload.main_contact);
+    }
+    if (upstreamPayload.status) {
+      upstreamUrl.searchParams.set("status", upstreamPayload.status);
+    }
+
+    const upstream = await fetch(upstreamUrl.toString(), {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(upstreamPayload),
