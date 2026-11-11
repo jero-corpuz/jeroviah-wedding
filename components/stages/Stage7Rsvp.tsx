@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { MasterlistGuest, PartyMember } from "@/lib/arcade/types";
 import { walkToStage } from "@/lib/arcade/actions";
 import { playSfx } from "@/lib/arcade/audio";
@@ -135,6 +135,22 @@ export default function Stage7Rsvp({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [rollCycle, setRollCycle] = useState(0);
+  const stageRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          syncIfStale(10_000);
+        }
+      },
+      { threshold: 0.25 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [syncIfStale]);
 
   const loadMasterlist = () => syncMasterlist({ silent: false });
 
@@ -482,7 +498,7 @@ export default function Stage7Rsvp({
   const activeAddedCount = attendance === "regrets" ? 0 : selectedCompanions.length;
 
   return (
-    <section className="fullscreen-arcade-stage" id="stage-7">
+    <section ref={stageRef} className="fullscreen-arcade-stage" id="stage-7">
       <div className="credits-cabinet">
         <div className="credits-header">
           <button
@@ -492,7 +508,27 @@ export default function Stage7Rsvp({
             ◀ BACK
           </button>
           <h2 className="credits-title">★ THE END? NOT YET! ★</h2>
-          <span className="credits-sub">RSVP TO JOIN THE CREDITS</span>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <span className="credits-sub">AUTO-SYNC: 15M</span>
+            <button
+              type="button"
+              id="creditsSyncBtn"
+              onClick={() => void syncMasterlist({ silent: true })}
+              disabled={isSyncing}
+              title="Sync roll credits and masterlist from Google Sheets now"
+              style={{
+                fontFamily: "var(--font-arcade)",
+                fontSize: "9px",
+                color: "#fde047",
+                background: "rgba(30, 58, 138, 0.75)",
+                border: "2px solid #38bdf8",
+                padding: "4px 8px",
+                cursor: isSyncing ? "wait" : "pointer",
+              }}
+            >
+              {isSyncing ? "⏳ SYNCING…" : "🔄 SYNC CREDITS"}
+            </button>
+          </div>
         </div>
 
         <div className="credits-grid">

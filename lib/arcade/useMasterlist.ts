@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchMasterlist } from "@/lib/arcade/masterlist";
 import { MasterlistGuest, PartyMember } from "@/lib/arcade/types";
 
+const SYNC_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes while tab is active
+const RECHECK_MIN_AGE_MS = 4_000; // Re-sync quickly when returning from editing Google Sheets
+
 export interface UseMasterlistResult {
   masterlist: MasterlistGuest[];
   setMasterlist: React.Dispatch<React.SetStateAction<MasterlistGuest[]>>;
@@ -69,6 +72,7 @@ export function useMasterlist(): UseMasterlistResult {
 
   useEffect(() => {
     let active = true;
+    lastFetchedRef.current = Date.now();
     fetchMasterlist()
       .then(({ guests, messages: nextMessages, messagesSupported: nextSupported }) => {
         if (!active) return;
@@ -86,31 +90,37 @@ export function useMasterlist(): UseMasterlistResult {
         setLoading(false);
       });
 
-    // Periodic background sync every 60s while the tab is active
+    // Periodic background sync every 15 minutes while the tab is visible
     const interval = setInterval(() => {
       if (typeof document !== "undefined" && document.visibilityState === "visible") {
         syncMasterlist({ silent: true });
       }
-    }, 60_000);
+    }, SYNC_INTERVAL_MS);
 
-    // Sync on tab re-focus if older than 30s
+    // Instant re-sync when switching back from editing Google Sheets (debounced 4s)
     const handleRecheck = () => {
       if (
         typeof document !== "undefined" &&
         document.visibilityState === "visible" &&
-        Date.now() - lastFetchedRef.current > 30_000
+        Date.now() - lastFetchedRef.current > RECHECK_MIN_AGE_MS
       ) {
         syncMasterlist({ silent: true });
       }
     };
 
+    const handleOnline = () => {
+      syncMasterlist({ silent: true });
+    };
+
     window.addEventListener("focus", handleRecheck);
+    window.addEventListener("online", handleOnline);
     document.addEventListener("visibilitychange", handleRecheck);
 
     return () => {
       active = false;
       clearInterval(interval);
       window.removeEventListener("focus", handleRecheck);
+      window.removeEventListener("online", handleOnline);
       document.removeEventListener("visibilitychange", handleRecheck);
     };
   }, [syncMasterlist]);
