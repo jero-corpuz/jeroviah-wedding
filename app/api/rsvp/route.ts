@@ -6,20 +6,26 @@ import {
   RsvpSubmissionPayload,
 } from "@/lib/arcade/masterlist";
 
+function stripOuterQuotes(value: string): string {
+  return value.trim().replace(/^["']|["']$/g, "").trim();
+}
+
 function getServerMasterlistUrl(): string {
   const configured =
-    process.env.MASTERLIST_URL?.trim() ||
-    process.env.NEXT_PUBLIC_MASTERLIST_URL?.trim() ||
+    process.env.MASTERLIST_URL ||
+    process.env.NEXT_PUBLIC_MASTERLIST_URL ||
     "";
-  return configured ? normalizeSheetUrl(configured) : "";
+  const cleaned = stripOuterQuotes(configured);
+  return cleaned ? normalizeSheetUrl(cleaned) : "";
 }
 
 function getServerRsvpSubmitUrl(): string {
   const configured =
-    process.env.RSVP_SUBMIT_URL?.trim() ||
-    process.env.NEXT_PUBLIC_RSVP_SUBMIT_URL?.trim() ||
+    process.env.RSVP_SUBMIT_URL ||
+    process.env.NEXT_PUBLIC_RSVP_SUBMIT_URL ||
     "";
-  if (configured) return configured;
+  const cleaned = stripOuterQuotes(configured);
+  if (cleaned) return cleaned;
 
   const masterlistUrl = getServerMasterlistUrl();
   if (masterlistUrl.includes("script.google.com/macros/")) {
@@ -38,17 +44,37 @@ export async function GET(request: Request) {
     let rawText = "";
 
     if (targetUrl && /^https?:\/\//i.test(targetUrl)) {
-      const res = await fetch(targetUrl, { cache: "no-store" });
+      const res = await fetch(targetUrl, {
+        cache: "no-store",
+        redirect: "follow",
+        headers: {
+          Accept: "application/json, text/plain, */*",
+        },
+        signal: AbortSignal.timeout(9000),
+      });
       if (!res.ok) {
-        return Response.json(
-          { error: `Failed to fetch masterlist (HTTP ${res.status})` },
-          { status: 502 }
-        );
+        const hint =
+          res.status === 404
+            ? "Apps Script URL returned HTTP 404. Update MASTERLIST_URL & RSVP_SUBMIT_URL in Netlify Environment Variables to your active /exec URL and redeploy."
+            : res.status === 401 || res.status === 403
+              ? "Apps Script denied access. Deploy with 'Execute as: Me' and 'Who has access: Anyone'."
+              : `Failed to fetch masterlist (HTTP ${res.status})`;
+        return Response.json({ error: hint }, { status: 502 });
       }
       rawText = await res.text();
     } else {
       const fallbackPath = path.join(process.cwd(), "public", "masterlist.json");
-      rawText = await readFile(fallbackPath, "utf8");
+      try {
+        rawText = await readFile(fallbackPath, "utf8");
+      } catch {
+        return Response.json(
+          {
+            error:
+              "MASTERLIST_URL is not configured (and fallback masterlist.json was unavailable). Set MASTERLIST_URL & RSVP_SUBMIT_URL in Netlify Environment Variables and redeploy.",
+          },
+          { status: 500 }
+        );
+      }
     }
 
     const parsed = parseMasterlistText(rawText);
@@ -124,6 +150,7 @@ export async function POST(request: Request) {
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(payload),
       redirect: "follow",
+      signal: AbortSignal.timeout(9000),
     });
 
     const upstreamText = await upstream.text();

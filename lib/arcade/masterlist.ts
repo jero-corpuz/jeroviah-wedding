@@ -393,7 +393,14 @@ export async function fetchMasterlist(url?: string): Promise<{
   const targetUrl = url ? normalizeSheetUrl(url) : getMasterlistUrl();
   const res = await fetch(targetUrl, { cache: 'no-store' });
   if (!res.ok) {
-    throw new Error(`Failed to fetch masterlist (HTTP ${res.status})`);
+    let errMsg = `Failed to fetch masterlist (HTTP ${res.status})`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body?.error) errMsg = `${body.error} [HTTP ${res.status}]`;
+    } catch {
+      // Keep status fallback if response was non-JSON (e.g. gateway HTML error)
+    }
+    throw new Error(errMsg);
   }
   const text = await res.text();
   const guests = parseMasterlistText(text);

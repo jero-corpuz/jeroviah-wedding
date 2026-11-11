@@ -716,7 +716,7 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
                     </div>
                   )}
 
-                  {notFoundError && !selectedGuest && (
+                  {notFoundError && !selectedGuest && !masterlistError && (
                     <div id="rsvpNotFoundMsg" className="rsvp-hint-line warn">
                       ⚠️ Name not found in the guest masterlist — please select your
                       name from the autofill list.{" "}
