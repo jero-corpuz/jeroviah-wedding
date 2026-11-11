@@ -323,6 +323,7 @@ export default function Stage7Rsvp({
         main_contact: matched.party.name,
         party: partyLabel,
         name: matched.guestName,
+        guest_name: matched.guestName,
         email: email.trim(),
         attendance,
         status: primaryStatus,

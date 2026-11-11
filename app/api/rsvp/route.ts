@@ -128,15 +128,22 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as RsvpSubmissionPayload;
-    if (!payload || !payload.name?.trim()) {
+    const primaryGuestName = (payload?.guest_name || payload?.name || "").trim();
+    if (!payload || !primaryGuestName) {
       return Response.json(
         { error: "Invalid RSVP payload." },
         { status: 400 }
       );
     }
 
+    const upstreamPayload: RsvpSubmissionPayload = {
+      ...payload,
+      name: primaryGuestName,
+      guest_name: primaryGuestName,
+    };
+
     const submitUrl = getServerRsvpSubmitUrl();
-    const isTestEmail = payload.email
+    const isTestEmail = upstreamPayload.email
       ?.trim()
       .toLowerCase()
       .endsWith("@example.com");
@@ -148,7 +155,7 @@ export async function POST(request: Request) {
     const upstream = await fetch(submitUrl, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(upstreamPayload),
       redirect: "follow",
       signal: AbortSignal.timeout(9000),
     });

@@ -419,6 +419,7 @@ export interface RsvpSubmissionPayload {
   main_contact?: string;
   party?: string;
   name: string;
+  guest_name?: string;
   email: string;
   attendance: string;
   status: 'Confirmed' | 'Declined';
