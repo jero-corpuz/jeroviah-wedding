@@ -1,19 +1,22 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { MasterlistGuest, PartyMember } from "@/lib/arcade/types";
 import { walkToStage } from "@/lib/arcade/actions";
 import { playSfx } from "@/lib/arcade/audio";
 import { addBrawlerScore } from "@/lib/arcade/score";
-import {
-  fetchMasterlist,
-  stripHonorific,
-  submitRsvpEntry,
-} from "@/lib/arcade/masterlist";
+import { stripHonorific, submitRsvpEntry } from "@/lib/arcade/masterlist";
 
 interface Stage7RsvpProps {
   roster: PartyMember[];
   onRsvpSuccess: (data: PartyMember) => void;
+  masterlist: MasterlistGuest[];
+  setMasterlist: React.Dispatch<React.SetStateAction<MasterlistGuest[]>>;
+  masterlistLoading: boolean;
+  masterlistError: string | null;
+  isSyncing: boolean;
+  syncMasterlist: (opts?: { silent?: boolean }) => Promise<void>;
+  syncIfStale: (maxAgeMs?: number) => void;
 }
 
 const VALID_CLANS = new Set(["Team Jero", "Team Viah", "Both Players"]);
@@ -105,11 +108,17 @@ function buildSelectableGuests(masterlist: MasterlistGuest[]): SelectableGuest[]
   return items;
 }
 
-export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
-  const [masterlist, setMasterlist] = useState<MasterlistGuest[]>([]);
-  const [masterlistLoading, setMasterlistLoading] = useState(true);
-  const [masterlistError, setMasterlistError] = useState<string | null>(null);
-
+export default function Stage7Rsvp({
+  roster,
+  onRsvpSuccess,
+  masterlist,
+  setMasterlist,
+  masterlistLoading,
+  masterlistError,
+  isSyncing,
+  syncMasterlist,
+  syncIfStale,
+}: Stage7RsvpProps) {
   const [name, setName] = useState("");
   const [selectedGuest, setSelectedGuest] = useState<SelectableGuest | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -127,84 +136,7 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [rollCycle, setRollCycle] = useState(0);
 
-  const [isSyncing, setIsSyncing] = useState(false);
-  const lastFetchedRef = useRef<number>(0);
-  const isSyncingRef = useRef<boolean>(false);
-
-  const syncMasterlist = useCallback(async (opts?: { silent?: boolean }) => {
-    if (isSyncingRef.current) return;
-    isSyncingRef.current = true;
-    const silent = !!opts?.silent;
-    if (!silent) setMasterlistLoading(true);
-    setIsSyncing(true);
-    setMasterlistError(null);
-
-    try {
-      const { guests } = await fetchMasterlist();
-      setMasterlist(guests);
-      lastFetchedRef.current = Date.now();
-    } catch (err) {
-      if (!silent) {
-        setMasterlistError(
-          err instanceof Error ? err.message : "Could not load guest masterlist."
-        );
-      }
-    } finally {
-      isSyncingRef.current = false;
-      setMasterlistLoading(false);
-      setIsSyncing(false);
-    }
-  }, []);
-
-  const loadMasterlist = useCallback(() => {
-    return syncMasterlist({ silent: false });
-  }, [syncMasterlist]);
-
-  useEffect(() => {
-    let active = true;
-    fetchMasterlist()
-      .then(({ guests }) => {
-        if (!active) return;
-        setMasterlist(guests);
-        lastFetchedRef.current = Date.now();
-        setMasterlistLoading(false);
-      })
-      .catch((err) => {
-        if (!active) return;
-        setMasterlistError(
-          err instanceof Error ? err.message : "Could not load guest masterlist."
-        );
-        setMasterlistLoading(false);
-      });
-
-    // Periodic background sync every 60s while the tab is active
-    const interval = setInterval(() => {
-      if (typeof document !== "undefined" && document.visibilityState === "visible") {
-        syncMasterlist({ silent: true });
-      }
-    }, 60_000);
-
-    // Sync on tab re-focus if older than 30s
-    const handleRecheck = () => {
-      if (
-        typeof document !== "undefined" &&
-        document.visibilityState === "visible" &&
-        Date.now() - lastFetchedRef.current > 30_000
-      ) {
-        syncMasterlist({ silent: true });
-      }
-    };
-
-    window.addEventListener("focus", handleRecheck);
-    document.addEventListener("visibilitychange", handleRecheck);
-
-    return () => {
-      active = false;
-      clearInterval(interval);
-      window.removeEventListener("focus", handleRecheck);
-      document.removeEventListener("visibilitychange", handleRecheck);
-    };
-  }, [syncMasterlist]);
+  const loadMasterlist = () => syncMasterlist({ silent: false });
 
   const rawQuery = name.trim().toLowerCase();
   const strippedQuery = stripHonorific(name).toLowerCase();
@@ -282,11 +214,8 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
     setSubmitError(null);
 
     // Auto-refresh in background if the guest is typing and data is older than 30s
-    if (
-      value.trim().length >= MIN_QUERY_LENGTH &&
-      Date.now() - lastFetchedRef.current > 30_000
-    ) {
-      syncMasterlist({ silent: true });
+    if (value.trim().length >= MIN_QUERY_LENGTH) {
+      syncIfStale(30_000);
     }
 
     const exact = findExactGuest(value);
@@ -585,9 +514,7 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
                       if (name.trim().length >= MIN_QUERY_LENGTH) {
                         setDropdownOpen(true);
                       }
-                      if (Date.now() - lastFetchedRef.current > 30_000) {
-                        syncMasterlist({ silent: true });
-                      }
+                      syncIfStale(30_000);
                     }}
                     onBlur={handleNameBlur}
                     onKeyDown={handleNameKeyDown}

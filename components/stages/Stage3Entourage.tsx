@@ -1,10 +1,22 @@
 "use client";
 
-import React from "react";
-import { ENTOURAGE } from "@/lib/arcade/data";
+import React, { useMemo } from "react";
+import { buildEntourageGroups } from "@/lib/arcade/entourage";
 import { cheerCrowd } from "@/lib/arcade/dioramas";
+import { MasterlistGuest } from "@/lib/arcade/types";
 
-export default function Stage3Entourage() {
+interface Stage3EntourageProps {
+  masterlist?: MasterlistGuest[];
+}
+
+export default function Stage3Entourage({
+  masterlist = [],
+}: Stage3EntourageProps) {
+  const entourageGroups = useMemo(
+    () => buildEntourageGroups(masterlist),
+    [masterlist]
+  );
+
   return (
     <section className="open-air-stage" id="stage-3">
       <div className="hill-stage-split">
@@ -47,7 +59,7 @@ export default function Stage3Entourage() {
               The players walking down the aisle with us — give them a cheer!
             </p>
             <div id="entourageList" className="squad-grid">
-              {ENTOURAGE.map((group, idx) => (
+              {entourageGroups.map((group, idx) => (
                 <div key={idx} className="squad-card">
                   <div className="squad-role">
                     {group.icon} {group.role}

@@ -26,6 +26,7 @@ import { playSfx } from "@/lib/arcade/audio";
 import { addBrawlerScore } from "@/lib/arcade/score";
 import { DEFAULT_ROSTER } from "@/lib/arcade/data";
 import { PartyMember, GalleryItem } from "@/lib/arcade/types";
+import { useMasterlist } from "@/lib/arcade/useMasterlist";
 
 const GALLERY_LIKES_STORAGE_KEY = "jero_viah_gallery_likes_v1";
 const RSVP_ROSTER_STORAGE_KEY = "jero_viah_rsvp_roster_v1";
@@ -41,6 +42,15 @@ export default function WeddingPage() {
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>(() => [...gameState.galleryItems]);
   const [crtMode, setCrtMode] = useState<boolean>(true);
   const [partyRoster, setPartyRoster] = useState<PartyMember[]>(() => [...gameState.partyRoster]);
+  const {
+    masterlist,
+    setMasterlist,
+    loading: masterlistLoading,
+    error: masterlistError,
+    isSyncing,
+    syncMasterlist,
+    syncIfStale,
+  } = useMasterlist();
 
   useEffect(() => {
     initArcade();
@@ -242,7 +252,7 @@ export default function WeddingPage() {
           <Stage2DressCode />
 
           {/* STAGE 3 (12:30 PM): ENTOURAGE STADIUM — CROWD WAVE */}
-          <Stage3Entourage />
+          <Stage3Entourage masterlist={masterlist} />
 
           {/* STAGE 4 (02:00 PM): ST. ALOYSIUS GONZAGA PARISH CHURCH */}
           <Stage4Church />
@@ -263,6 +273,13 @@ export default function WeddingPage() {
           <Stage7Rsvp
             roster={partyRoster}
             onRsvpSuccess={handleRsvpSuccess}
+            masterlist={masterlist}
+            setMasterlist={setMasterlist}
+            masterlistLoading={masterlistLoading}
+            masterlistError={masterlistError}
+            isSyncing={isSyncing}
+            syncMasterlist={syncMasterlist}
+            syncIfStale={syncIfStale}
           />
         </div>
       </main>

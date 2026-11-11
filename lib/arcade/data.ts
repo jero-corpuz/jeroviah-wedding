@@ -111,6 +111,8 @@ export const SF2_ROSTER_DATA: HeroData[] = [
 ];
 
 export const ENTOURAGE: EntourageGroup[] = [
+  { role: 'PARENTS OF THE GROOM', icon: '🤵‍♂️', names: ['To be announced'] },
+  { role: 'PARENTS OF THE BRIDE', icon: '👰‍♀️', names: ['To be announced'] },
   { role: 'PRINCIPAL SPONSORS', icon: '👑', names: ['To be announced'] },
   { role: 'BEST MAN', icon: '🤵', names: ['To be announced'] },
   { role: 'MAID OF HONOR', icon: '👰', names: ['To be announced'] },
