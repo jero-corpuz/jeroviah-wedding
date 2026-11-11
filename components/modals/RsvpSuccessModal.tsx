@@ -5,12 +5,14 @@ import { playSfx } from "@/lib/arcade/audio";
 
 interface RsvpSuccessModalProps {
   isOpen: boolean;
+  isDeclined?: boolean;
   summaryText: string;
   onClose: () => void;
 }
 
 export default function RsvpSuccessModal({
   isOpen,
+  isDeclined = false,
   summaryText,
   onClose,
 }: RsvpSuccessModalProps) {
@@ -32,10 +34,12 @@ export default function RsvpSuccessModal({
     >
       <div className="modal-card" style={{ textAlign: "center" }}>
         <div className="crit-hit-banner" style={{ fontSize: "16px" }}>
-          ★ STAGE CLEAR! CHALLENGER REGISTERED! ★
+          {isDeclined
+            ? "✕ MISSION FAILED! REGRETS LOGGED! ✕"
+            : "★ STAGE CLEAR! CHALLENGER REGISTERED! ★"}
         </div>
         <h3 className="brawler-title" style={{ fontSize: "48px", margin: "6px 0" }}>
-          WELCOME TO THE PARTY!
+          {isDeclined ? "MISSION FAILED!" : "WELCOME TO THE PARTY!"}
         </h3>
         <p
           id="rsvpModalSummary"
@@ -45,10 +49,10 @@ export default function RsvpSuccessModal({
         </p>
         <button
           onClick={handleClose}
-          className="arcade-btn btn-green"
+          className={`arcade-btn ${isDeclined ? "btn-red" : "btn-green"}`}
           style={{ width: "100%", padding: "12px" }}
         >
-          AWESOME! BACK TO THE STAGE
+          {isDeclined ? "CONTINUE — BACK TO THE STAGE" : "AWESOME! BACK TO THE STAGE"}
         </button>
       </div>
     </div>

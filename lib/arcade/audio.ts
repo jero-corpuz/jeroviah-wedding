@@ -134,7 +134,7 @@ export function toggleBgmSong(force?: boolean): boolean {
   return bgmPlaying;
 }
 
-export function playSfx(type: 'blip' | 'step' | 'coin' | 'pickup' | 'chirp' | 'bark' | 'powerup' | 'fanfare' | 'dance' | 'bells') {
+export function playSfx(type: 'blip' | 'step' | 'coin' | 'pickup' | 'chirp' | 'bark' | 'powerup' | 'fanfare' | 'dance' | 'bells' | 'fail') {
   if (!sfxEnabled) return;
   initAudio();
   if (!audioCtx) return;
@@ -238,6 +238,21 @@ export function playSfx(type: 'blip' | 'step' | 'coin' | 'pickup' | 'chirp' | 'b
       gain.connect(audioCtx.destination);
       osc.start(now + i * 0.11);
       osc.stop(now + i * 0.11 + 0.35);
+    });
+  } else if (type === 'fail') {
+    // Classic descending 8-bit Mission Failed tone
+    [392.0, 349.23, 261.63].forEach((f, i) => {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(f, now + i * 0.14);
+      gain.gain.setValueAtTime(0.07, now + i * 0.14);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.14 + 0.2);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(now + i * 0.14);
+      osc.stop(now + i * 0.14 + 0.2);
     });
   }
 }

@@ -374,8 +374,8 @@ export default function Stage7Rsvp({
         })
       );
 
-      playSfx("bells");
-      addBrawlerScore(500, 999);
+      playSfx(isRegrets ? "fail" : "bells");
+      addBrawlerScore(isRegrets ? 50 : 500, 999);
 
       const member: PartyMember = {
         name: matched.guestName,
@@ -444,10 +444,10 @@ export default function Stage7Rsvp({
 
       {roster.map((p, idx) => {
         const isRegrets = p.attendance === "regrets";
-        const status = isRegrets ? "CHEERING FROM AFAR" : "ATTENDING";
+        const status = isRegrets ? "MISSION FAILED • CHEERING FROM AFAR" : "ATTENDING";
         const addedCount = p.guestCount ?? p.addedGuests?.length ?? 0;
         const guestBadge = isRegrets
-          ? "NO GUESTS (CHEERING FROM AFAR)"
+          ? "MISSION FAILED (0 COMING)"
           : addedCount > 0
             ? `+${addedCount} ${addedCount === 1 ? "GUEST ADDED" : "GUESTS ADDED"} (${1 + addedCount} IN PARTY)`
             : "+0 GUESTS ADDED (SOLO)";
@@ -824,7 +824,7 @@ export default function Stage7Rsvp({
                     onChange={(e) => setAttendance(e.target.value)}
                   >
                     <option value="attending">⚡ ATTENDING IN BAGUIO!</option>
-                    <option value="regrets">💌 CHEERING FROM AFAR</option>
+                    <option value="regrets">💔 REGRETS — CAN&apos;T ATTEND (MISSION FAILED)</option>
                   </select>
                 </div>
 
@@ -853,7 +853,11 @@ export default function Stage7Rsvp({
                     required
                     maxLength={160}
                     rows={2}
-                    placeholder="See you at St. Aloysius!"
+                    placeholder={
+                      attendance === "regrets"
+                        ? "Sorry we can't make it — cheering you both on!"
+                        : "See you at St. Aloysius!"
+                    }
                     className="brawler-input"
                     value={msg}
                     onChange={(e) => setMsg(e.target.value)}

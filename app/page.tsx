@@ -51,6 +51,7 @@ export default function WeddingPage() {
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [rsvpSuccessOpen, setRsvpSuccessOpen] = useState(false);
   const [rsvpSummary, setRsvpSummary] = useState("");
+  const [rsvpDeclined, setRsvpDeclined] = useState(false);
 
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>(() => [...gameState.galleryItems]);
   const [crtMode, setCrtMode] = useState<boolean>(true);
@@ -214,16 +215,17 @@ export default function WeddingPage() {
         return next;
       });
 
-      const status =
-        newMember.attendance === "regrets"
-          ? "cheering from afar"
-          : "locked in for Feb 12, 2027";
+      const declined = newMember.attendance === "regrets";
+      const status = declined
+        ? "Mission Failed — can't make it to Baguio, cheering from afar"
+        : "locked in for Feb 12, 2027";
       const guestsNote =
         newMember.addedGuests && newMember.addedGuests.length > 0
           ? ` — taking ${newMember.addedGuests.join(", ")}`
           : "";
+      setRsvpDeclined(declined);
       setRsvpSummary(
-        `${newMember.name} (${newMember.party} • ${newMember.clan}) is ${status}${guestsNote}!`
+        `${newMember.name} (${newMember.party} • ${newMember.clan}): ${status}${guestsNote}!`
       );
       setRsvpSuccessOpen(true);
     },
@@ -340,6 +342,7 @@ export default function WeddingPage() {
 
       <RsvpSuccessModal
         isOpen={rsvpSuccessOpen}
+        isDeclined={rsvpDeclined}
         summaryText={rsvpSummary}
         onClose={() => setRsvpSuccessOpen(false)}
       />
