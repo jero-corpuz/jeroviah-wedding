@@ -160,14 +160,26 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
     return strippedMatches.length === 1 ? strippedMatches[0] : null;
   };
 
+  const getPreconfirmedCompanions = (guest: MasterlistGuest): string[] =>
+    guest.companions.filter((comp) => {
+      const st = guest.companionDetails?.find((d) => d.name === comp)?.status;
+      return st?.trim().toLowerCase() === "confirmed";
+    });
+
   const selectMasterlistGuest = (guest: MasterlistGuest) => {
     setName(guest.name);
     setSelectedGuest(guest);
-    setSelectedCompanions([]);
+    setSelectedCompanions(getPreconfirmedCompanions(guest));
     setCompanionsOpen(guest.companions.length > 0);
     setDropdownOpen(false);
     setNotFoundError(false);
     setSubmitError(null);
+    const normalizedStatus = guest.status?.trim().toLowerCase();
+    if (normalizedStatus === "declined") {
+      setAttendance("regrets");
+    } else if (normalizedStatus === "confirmed") {
+      setAttendance("attending");
+    }
     if (guest.clan && VALID_CLANS.has(guest.clan)) {
       setClan(guest.clan);
     }
@@ -195,9 +207,12 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
     if (exact) {
       setSelectedGuest(exact);
       setCompanionsOpen(exact.companions.length > 0);
-      setSelectedCompanions((prev) =>
-        prev.filter((c) => exact.companions.includes(c))
-      );
+      setSelectedCompanions((prev) => {
+        const validPrev = prev.filter((c) => exact.companions.includes(c));
+        return validPrev.length > 0
+          ? validPrev
+          : getPreconfirmedCompanions(exact);
+      });
       if (exact.clan && VALID_CLANS.has(exact.clan)) {
         setClan(exact.clan);
       }
@@ -260,7 +275,31 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
     if (!email.trim() || !msg.trim()) return;
 
     const isRegrets = attendance === "regrets";
+    const primaryStatus: "Confirmed" | "Declined" = isRegrets
+      ? "Declined"
+      : "Confirmed";
     const addedGuests = isRegrets ? [] : selectedCompanions;
+    const declinedGuests = isRegrets
+      ? matched.companions
+      : matched.companions.filter((c) => !addedGuests.includes(c));
+    const updates: Array<{
+      party_id?: string;
+      guest_name: string;
+      status: "Confirmed" | "Declined";
+    }> = [
+      {
+        party_id: matched.partyId,
+        guest_name: matched.name,
+        status: primaryStatus,
+      },
+      ...matched.companions.map((comp) => ({
+        party_id: matched.partyId,
+        guest_name: comp,
+        status: (addedGuests.includes(comp) ? "Confirmed" : "Declined") as
+          | "Confirmed"
+          | "Declined",
+      })),
+    ];
     const guestCount = addedGuests.length;
     const totalPartyCount = isRegrets ? 0 : 1 + guestCount;
     const partyLabel = isRegrets
@@ -273,16 +312,47 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
     try {
       await submitRsvpEntry({
         partyId: matched.partyId,
+        party_id: matched.partyId,
+        main_contact: matched.name,
         party: partyLabel,
         name: matched.name,
         email: email.trim(),
         attendance,
+        status: primaryStatus,
         addedGuests,
+        declinedGuests,
+        updates,
         guestCount,
         totalPartyCount,
         clan,
         msg: msg.trim(),
       });
+
+      const statusByGuest = new Map(
+        updates.map((u) => [u.guest_name.toLowerCase(), u.status])
+      );
+      setMasterlist((prev) =>
+        prev.map((g) => {
+          const sameParty = matched.partyId
+            ? g.partyId === matched.partyId &&
+              g.name.toLowerCase() === matched.name.toLowerCase()
+            : g.name.toLowerCase() === matched.name.toLowerCase();
+          if (!sameParty) return g;
+          return {
+            ...g,
+            status: primaryStatus,
+            companionDetails: g.companionDetails
+              ? g.companionDetails.map((d) => ({
+                  ...d,
+                  status: statusByGuest.get(d.name.toLowerCase()) ?? d.status,
+                }))
+              : g.companions.map((cname) => ({
+                  name: cname,
+                  status: statusByGuest.get(cname.toLowerCase()),
+                })),
+          };
+        })
+      );
 
       playSfx("bells");
       addBrawlerScore(500, 999);
@@ -501,9 +571,9 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
                                 )}
                               </span>
                               <span className="rsvp-autofill-tag">
-                                {guest.category
-                                  ? `${guest.category} • ${countLabel}`
-                                  : countLabel}
+                                {[guest.category, countLabel, guest.status]
+                                  .filter(Boolean)
+                                  .join(" • ")}
                               </span>
                             </button>
                           );
@@ -567,6 +637,9 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
                       ✅ VERIFIED ON MASTERLIST: {selectedGuest.name}
                       {selectedGuest.category
                         ? ` (${selectedGuest.category})`
+                        : ""}
+                      {selectedGuest.status
+                        ? ` • STATUS: ${selectedGuest.status.toUpperCase()}`
                         : ""}
                     </div>
                   )}
@@ -651,10 +724,17 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
                                 const checked =
                                   attendance !== "regrets" &&
                                   selectedCompanions.includes(comp);
-                                const detailRole =
+                                const detail =
                                   selectedGuest.companionDetails?.find(
                                     (d) => d.name === comp
-                                  )?.role;
+                                  );
+                                const detailRole = detail?.role;
+                                const detailStatus = detail?.status;
+                                const statusSlug = detailStatus
+                                  ? detailStatus
+                                      .toLowerCase()
+                                      .replace(/[^a-z0-9]+/g, "-")
+                                  : "";
                                 return (
                                   <label
                                     key={`${comp}-${cIdx}`}
@@ -670,9 +750,17 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
                                     />
                                     <span className="rsvp-companion-info">
                                       <span>{comp}</span>
-                                      {detailRole && (
+                                      {(detailRole || detailStatus) && (
                                         <span className="rsvp-companion-role">
-                                          ({detailRole})
+                                          {detailRole ? `(${detailRole})` : ""}
+                                          {detailRole && detailStatus ? " " : ""}
+                                          {detailStatus ? (
+                                            <span
+                                              className={`rsvp-status-badge status-${statusSlug}`}
+                                            >
+                                              {detailStatus.toUpperCase()}
+                                            </span>
+                                          ) : null}
                                         </span>
                                       )}
                                     </span>

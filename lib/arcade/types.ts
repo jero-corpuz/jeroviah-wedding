@@ -25,6 +25,7 @@ export interface EntourageGroup {
 export interface MasterlistCompanion {
   name: string;
   role?: string;
+  status?: string;
 }
 
 export interface MasterlistGuest {
@@ -32,6 +33,7 @@ export interface MasterlistGuest {
   partyId?: string;
   role?: string;
   category?: string;
+  status?: string;
   companions: string[];
   companionDetails?: MasterlistCompanion[];
   clan?: string;

@@ -157,6 +157,7 @@ function normalizeRecord(rec: Record<string, unknown>): MasterlistGuest | null {
   let partyId: string | undefined;
   let role: string | undefined;
   let category: string | undefined;
+  let status: string | undefined;
   const companionPool: string[] = [];
   const existingDetails: MasterlistCompanion[] = [];
   let clan: string | undefined;
@@ -177,16 +178,21 @@ function normalizeRecord(rec: Record<string, unknown>): MasterlistGuest | null {
     } else if (k === 'category' || k === 'group') {
       const s = String(value ?? '').trim();
       if (s) category = s;
+    } else if (k === 'status' || k === 'rsvp_status' || k === 'rsvp') {
+      const s = String(value ?? '').trim();
+      if (s) status = s;
     } else if (k === 'companion_details' || k === 'companiondetails') {
       if (Array.isArray(value)) {
         for (const item of value) {
           if (item && typeof item === 'object' && 'name' in item) {
             const n = String((item as { name: unknown }).name ?? '').trim();
             const r = (item as { role?: unknown }).role;
+            const st = (item as { status?: unknown }).status;
             if (n) {
               existingDetails.push({
                 name: n,
-                role: typeof r === 'string' && r.trim() ? r.trim() : undefined
+                role: typeof r === 'string' && r.trim() ? r.trim() : undefined,
+                status: typeof st === 'string' && st.trim() ? st.trim() : undefined
               });
             }
           }
@@ -229,6 +235,10 @@ function normalizeRecord(rec: Record<string, unknown>): MasterlistGuest | null {
           role:
             isCompanionRow && c.toLowerCase() === rowGuestName.toLowerCase()
               ? role
+              : undefined,
+          status:
+            isCompanionRow && c.toLowerCase() === rowGuestName.toLowerCase()
+              ? status
               : undefined
         }));
 
@@ -237,6 +247,7 @@ function normalizeRecord(rec: Record<string, unknown>): MasterlistGuest | null {
     partyId,
     role: isCompanionRow ? undefined : role,
     category,
+    status: isCompanionRow ? undefined : status,
     companions,
     companionDetails,
     clan: clan || mapCategoryToClan(category),
@@ -289,7 +300,7 @@ function mergeMasterlistGuests(entries: MasterlistGuest[]): MasterlistGuest[] {
         ...entry.companions
       ]).filter((c) => c.toLowerCase() !== primaryLower);
 
-      const detailMap = new Map<string, { name: string; role?: string }>();
+      const detailMap = new Map<string, MasterlistCompanion>();
       for (const d of [
         ...(existing.companionDetails ?? []),
         ...(entry.companionDetails ?? [])
@@ -297,14 +308,21 @@ function mergeMasterlistGuests(entries: MasterlistGuest[]): MasterlistGuest[] {
         const dk = d.name.toLowerCase();
         if (dk === primaryLower) continue;
         const prev = detailMap.get(dk);
-        if (!prev || (!prev.role && d.role)) {
-          detailMap.set(dk, { name: d.name, role: d.role });
+        if (!prev) {
+          detailMap.set(dk, { name: d.name, role: d.role, status: d.status });
+        } else {
+          detailMap.set(dk, {
+            name: prev.name,
+            role: prev.role || d.role,
+            status: prev.status || d.status
+          });
         }
       }
       existing.companionDetails = Array.from(detailMap.values());
 
       if (!existing.role && entry.role) existing.role = entry.role;
       if (!existing.category && entry.category) existing.category = entry.category;
+      if (!existing.status && entry.status) existing.status = entry.status;
       if (!existing.clan && entry.clan) existing.clan = entry.clan;
       if (!existing.email && entry.email) existing.email = entry.email;
     }
@@ -380,13 +398,24 @@ export async function fetchMasterlist(url?: string): Promise<{
   return { guests, source: targetUrl };
 }
 
+export interface RsvpGuestStatusUpdate {
+  party_id?: string;
+  guest_name: string;
+  status: 'Confirmed' | 'Declined';
+}
+
 export interface RsvpSubmissionPayload {
   partyId?: string;
+  party_id?: string;
+  main_contact?: string;
   party?: string;
   name: string;
   email: string;
   attendance: string;
+  status: 'Confirmed' | 'Declined';
   addedGuests: string[];
+  declinedGuests?: string[];
+  updates?: RsvpGuestStatusUpdate[];
   guestCount: number;
   totalPartyCount: number;
   clan: string;
@@ -403,7 +432,14 @@ export async function submitRsvpEntry(payload: RsvpSubmissionPayload): Promise<v
     body: JSON.stringify(payload)
   });
   if (!res.ok && res.type !== 'opaque') {
-    throw new Error(`Failed to submit RSVP (HTTP ${res.status})`);
+    let errMsg = `Failed to submit RSVP (HTTP ${res.status})`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body?.error) errMsg = body.error;
+    } catch {
+      // Keep status-based fallback message
+    }
+    throw new Error(errMsg);
   }
 }
 

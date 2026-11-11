@@ -1783,6 +1783,31 @@
         .rsvp-companion-opt.checked .rsvp-companion-role {
             color: #86efac;
         }
+        .rsvp-status-badge {
+            display: inline-block;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-size: 10px;
+            letter-spacing: 0.04em;
+            border: 1px solid #64748b;
+            color: #cbd5e1;
+            background: rgba(30, 41, 59, 0.8);
+        }
+        .rsvp-status-badge.status-confirmed {
+            border-color: #22c55e;
+            color: #86efac;
+            background: rgba(20, 83, 45, 0.55);
+        }
+        .rsvp-status-badge.status-declined {
+            border-color: #f87171;
+            color: #fca5a5;
+            background: rgba(127, 29, 29, 0.55);
+        }
+        .rsvp-status-badge.status-pending {
+            border-color: #f59e0b;
+            color: #fde68a;
+            background: rgba(120, 53, 15, 0.45);
+        }
         .credits-submit { width: 100%; margin-top: 10px; padding: 11px 8px; white-space: normal; }
         .credits-roll-panel {
             position: relative;
