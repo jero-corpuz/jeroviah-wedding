@@ -4,9 +4,6 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Jero & Viah vs. The World | Feb 12, 2027 • Open-Air Beat-'Em-Up Wedding",
   description: "Join Jero & Viah on their 8-bit co-op wedding quest in Baguio City on February 12, 2027!",
-  icons: {
-    icon: "/favicon.ico",
-  },
 };
 
 export const viewport: Viewport = {
