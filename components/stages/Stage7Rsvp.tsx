@@ -272,6 +272,8 @@ export default function Stage7Rsvp({ roster, onRsvpSuccess }: Stage7RsvpProps) {
     setSubmitting(true);
     try {
       await submitRsvpEntry({
+        partyId: matched.partyId,
+        party: partyLabel,
         name: matched.name,
         email: email.trim(),
         attendance,

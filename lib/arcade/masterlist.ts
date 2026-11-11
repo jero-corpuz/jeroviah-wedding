@@ -1,14 +1,13 @@
-import { MasterlistGuest } from './types';
+import { MasterlistCompanion, MasterlistGuest } from './types';
 
-export const DEFAULT_MASTERLIST_URL = '/masterlist.json';
+export const DEFAULT_MASTERLIST_URL = '/api/rsvp';
 
 export function getMasterlistUrl(): string {
-  const configured = process.env.NEXT_PUBLIC_MASTERLIST_URL?.trim();
-  return normalizeSheetUrl(configured || DEFAULT_MASTERLIST_URL);
+  return DEFAULT_MASTERLIST_URL;
 }
 
 export function getRsvpSubmitUrl(): string {
-  return process.env.NEXT_PUBLIC_RSVP_SUBMIT_URL?.trim() || '';
+  return '/api/rsvp';
 }
 
 /**
@@ -159,6 +158,7 @@ function normalizeRecord(rec: Record<string, unknown>): MasterlistGuest | null {
   let role: string | undefined;
   let category: string | undefined;
   const companionPool: string[] = [];
+  const existingDetails: MasterlistCompanion[] = [];
   let clan: string | undefined;
   let email: string | undefined;
 
@@ -177,6 +177,21 @@ function normalizeRecord(rec: Record<string, unknown>): MasterlistGuest | null {
     } else if (k === 'category' || k === 'group') {
       const s = String(value ?? '').trim();
       if (s) category = s;
+    } else if (k === 'companion_details' || k === 'companiondetails') {
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (item && typeof item === 'object' && 'name' in item) {
+            const n = String((item as { name: unknown }).name ?? '').trim();
+            const r = (item as { role?: unknown }).role;
+            if (n) {
+              existingDetails.push({
+                name: n,
+                role: typeof r === 'string' && r.trim() ? r.trim() : undefined
+              });
+            }
+          }
+        }
+      }
     } else if (
       COMPANION_KEYS.has(k) ||
       /^(guest|companion|plus_?one|member)_?\d+$/.test(k)
@@ -206,10 +221,16 @@ function normalizeRecord(rec: Record<string, unknown>): MasterlistGuest | null {
     (c) => c.toLowerCase() !== primaryLower
   );
 
-  const companionDetails = companions.map((c) => ({
-    name: c,
-    role: isCompanionRow && c.toLowerCase() === rowGuestName.toLowerCase() ? role : undefined
-  }));
+  const companionDetails =
+    existingDetails.length > 0
+      ? existingDetails
+      : companions.map((c) => ({
+          name: c,
+          role:
+            isCompanionRow && c.toLowerCase() === rowGuestName.toLowerCase()
+              ? role
+              : undefined
+        }));
 
   return {
     name: primaryName,
@@ -360,6 +381,8 @@ export async function fetchMasterlist(url?: string): Promise<{
 }
 
 export interface RsvpSubmissionPayload {
+  partyId?: string;
+  party?: string;
   name: string;
   email: string;
   attendance: string;
@@ -374,10 +397,9 @@ export async function submitRsvpEntry(payload: RsvpSubmissionPayload): Promise<v
   const submitUrl = getRsvpSubmitUrl();
   if (!submitUrl) return;
 
-  // Use text/plain to stay compatible with Google Apps Script web apps without CORS preflight failures.
   const res = await fetch(submitUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
   if (!res.ok && res.type !== 'opaque') {

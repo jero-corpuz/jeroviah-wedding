@@ -24,9 +24,11 @@ import { gameState } from "@/lib/arcade/state";
 import { initArcade, destroyArcade } from "@/lib/arcade/engine";
 import { playSfx } from "@/lib/arcade/audio";
 import { addBrawlerScore } from "@/lib/arcade/score";
+import { DEFAULT_ROSTER } from "@/lib/arcade/data";
 import { PartyMember, GalleryItem } from "@/lib/arcade/types";
 
 const GALLERY_LIKES_STORAGE_KEY = "jero_viah_gallery_likes_v1";
+const RSVP_ROSTER_STORAGE_KEY = "jero_viah_rsvp_roster_v1";
 
 export default function WeddingPage() {
   const [mapModalOpen, setMapModalOpen] = useState(false);
@@ -48,32 +50,56 @@ export default function WeddingPage() {
   }, []);
 
   useEffect(() => {
-    const loadSavedLikes = () => {
+    const loadSavedState = () => {
       try {
-        const raw = window.localStorage.getItem(GALLERY_LIKES_STORAGE_KEY);
-        if (!raw) return;
-        const saved: Record<string, number> = JSON.parse(raw);
-        if (!saved || typeof saved !== "object") return;
-        setGalleryItems((prev) => {
-          const next = prev.map((item) => {
-            const count = saved[String(item.id)];
-            return typeof count === "number" && count >= 0
-              ? { ...item, likes: count }
-              : item;
-          });
-          gameState.galleryItems = next;
-          return next;
-        });
+        const rawLikes = window.localStorage.getItem(GALLERY_LIKES_STORAGE_KEY);
+        if (rawLikes) {
+          const savedLikes: Record<string, number> = JSON.parse(rawLikes);
+          if (savedLikes && typeof savedLikes === "object") {
+            setGalleryItems((prev) => {
+              const next = prev.map((item) => {
+                const count = savedLikes[String(item.id)];
+                return typeof count === "number" && count >= 0
+                  ? { ...item, likes: count }
+                  : item;
+              });
+              gameState.galleryItems = next;
+              return next;
+            });
+          }
+        }
+      } catch {
+        // Ignore localStorage read/parse errors
+      }
+
+      try {
+        const rawRsvps = window.localStorage.getItem(RSVP_ROSTER_STORAGE_KEY);
+        if (rawRsvps) {
+          const savedRsvps = JSON.parse(rawRsvps) as PartyMember[];
+          if (Array.isArray(savedRsvps) && savedRsvps.length > 0) {
+            const seen = new Set<string>();
+            const merged: PartyMember[] = [];
+            for (const entry of [...savedRsvps, ...DEFAULT_ROSTER]) {
+              if (!entry?.name) continue;
+              const key = entry.name.trim().toLowerCase();
+              if (seen.has(key)) continue;
+              seen.add(key);
+              merged.push(entry);
+            }
+            setPartyRoster(merged);
+            gameState.partyRoster = merged;
+          }
+        }
       } catch {
         // Ignore localStorage read/parse errors
       }
     };
 
-    const raf = window.requestAnimationFrame(loadSavedLikes);
-    window.addEventListener("storage", loadSavedLikes);
+    const raf = window.requestAnimationFrame(loadSavedState);
+    window.addEventListener("storage", loadSavedState);
     return () => {
       window.cancelAnimationFrame(raf);
-      window.removeEventListener("storage", loadSavedLikes);
+      window.removeEventListener("storage", loadSavedState);
     };
   }, []);
 
@@ -127,8 +153,30 @@ export default function WeddingPage() {
   }, [galleryItems, lightboxIndex, handleLikeItem]);
 
   const handleRsvpSuccess = useCallback((newMember: PartyMember) => {
-    setPartyRoster((prev) => [newMember, ...prev.map((p) => ({ ...p, isNew: false }))]);
-    gameState.partyRoster = [newMember, ...gameState.partyRoster.map((p) => ({ ...p, isNew: false }))];
+    setPartyRoster((prev) => {
+      const targetKey = newMember.name.trim().toLowerCase();
+      const filtered = prev
+        .filter((p) => p.name.trim().toLowerCase() !== targetKey)
+        .map((p) => ({ ...p, isNew: false }));
+      const next = [newMember, ...filtered];
+      gameState.partyRoster = next;
+
+      try {
+        const defaultNames = new Set(
+          DEFAULT_ROSTER.map((d) => d.name.trim().toLowerCase())
+        );
+        const customEntries = next.filter(
+          (p) => p.isNew || !defaultNames.has(p.name.trim().toLowerCase())
+        );
+        window.localStorage.setItem(
+          RSVP_ROSTER_STORAGE_KEY,
+          JSON.stringify(customEntries)
+        );
+      } catch {
+        // Ignore localStorage write errors
+      }
+      return next;
+    });
 
     const status =
       newMember.attendance === "regrets"
