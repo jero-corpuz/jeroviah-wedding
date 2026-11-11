@@ -318,6 +318,7 @@ export default function Stage7Rsvp({
     setSubmitting(true);
     try {
       await submitRsvpEntry({
+        action: "update_status",
         partyId: matched.party.partyId,
         party_id: matched.party.partyId,
         main_contact: matched.party.name,

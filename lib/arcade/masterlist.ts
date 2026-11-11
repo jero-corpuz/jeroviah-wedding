@@ -414,6 +414,7 @@ export interface RsvpGuestStatusUpdate {
 }
 
 export interface RsvpSubmissionPayload {
+  action?: 'update_status';
   partyId?: string;
   party_id?: string;
   main_contact?: string;

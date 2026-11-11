@@ -138,6 +138,7 @@ export async function POST(request: Request) {
 
     const upstreamPayload: RsvpSubmissionPayload = {
       ...payload,
+      action: "update_status",
       name: primaryGuestName,
       guest_name: primaryGuestName,
     };
@@ -155,6 +156,7 @@ export async function POST(request: Request) {
     // Mirror core guest fields onto query params as well as JSON body so
     // Apps Script doPost(e) works whether it reads e.postData.contents or e.parameter.
     const upstreamUrl = new URL(submitUrl);
+    upstreamUrl.searchParams.set("action", "update_status");
     upstreamUrl.searchParams.set("guest_name", primaryGuestName);
     upstreamUrl.searchParams.set("name", primaryGuestName);
     if (upstreamPayload.party_id) {
