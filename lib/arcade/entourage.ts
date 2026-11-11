@@ -192,3 +192,4 @@ export function buildEntourageGroups(masterlist: MasterlistGuest[]): EntourageGr
     { role: 'FUR-BEARERS', icon: '🐾', names: furBearers.length ? furBearers : ['Baki • Manju • Shiro'] },
   ];
 }
+
