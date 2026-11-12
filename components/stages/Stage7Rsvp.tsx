@@ -502,8 +502,10 @@ export default function Stage7Rsvp({
       <div className="credits-cabinet">
         <div className="credits-header">
           <button
+            type="button"
             onClick={() => walkToStage(6)}
             className="arcade-btn btn-cream"
+            aria-label="Back to gallery"
           >
             ◀ BACK
           </button>

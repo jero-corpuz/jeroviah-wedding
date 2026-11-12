@@ -657,15 +657,23 @@
 
         body.in-arcade-fullscreen .brawler-hud {
             opacity: 0;
-            pointer-events: none;
+            visibility: hidden;
+            pointer-events: none !important;
             transform: translateY(-24px);
+        }
+        body.in-arcade-fullscreen .brawler-hud * {
+            pointer-events: none !important;
         }
         body.in-arcade-fullscreen .street-ground-backdrop,
         body.in-arcade-fullscreen #brawler-floor-canvas,
         body.in-arcade-fullscreen .floor-hud-controls {
             opacity: 0;
-            pointer-events: none;
+            visibility: hidden;
+            pointer-events: none !important;
             transform: translateY(30px);
+        }
+        body.in-arcade-fullscreen .floor-hud-controls * {
+            pointer-events: none !important;
         }
 
         .fullscreen-arcade-stage {
@@ -1950,14 +1958,36 @@
         /* =====================================================================
            11. RSVP RIDE-OUT: CREDITS ABOVE A LIVE ROAD
            ===================================================================== */
-        body.credits-mode .brawler-hud { opacity: 0; pointer-events: none; transform: translateY(-24px); }
-        body.credits-mode .floor-hud-controls { opacity: 0; pointer-events: none; transform: translate(-50%, 30px); }
+        body.credits-mode .brawler-hud {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none !important;
+            transform: translateY(-24px);
+        }
+        body.credits-mode .brawler-hud * {
+            pointer-events: none !important;
+        }
+        body.credits-mode .floor-hud-controls {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none !important;
+            transform: translate(-50%, 30px);
+        }
+        body.credits-mode .floor-hud-controls * {
+            pointer-events: none !important;
+        }
         body.credits-mode .street-ground-backdrop::before,
         body.credits-mode .street-ground-backdrop::after { display: none; }   /* the canvas paints moving lanes instead */
-        #stage-7.fullscreen-arcade-stage { justify-content: flex-start; pointer-events: none; }
+        #stage-7.fullscreen-arcade-stage {
+            justify-content: flex-start;
+            pointer-events: none;
+            z-index: 95;
+        }
         #stage-7 .credits-cabinet {
             height: calc(var(--vh) * 100 - var(--floor-h) + 10px);
             pointer-events: auto;
+            position: relative;
+            z-index: 96;
             background: linear-gradient(180deg, rgba(0, 0, 0, 0.9) 0%, rgba(3, 7, 18, 0.82) 82%, rgba(3, 7, 18, 0) 100%);
         }
         @media (max-width: 680px) {
