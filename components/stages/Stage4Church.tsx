@@ -2,7 +2,7 @@
 
 import React from "react";
 import { replayChurchKiss } from "@/lib/arcade/dioramas";
-import { downloadIcsCalendar, openGoogleCalendar } from "@/lib/arcade/calendar";
+import { openGoogleCalendar } from "@/lib/arcade/calendar";
 import { walkToStage } from "@/lib/arcade/actions";
 
 export default function Stage4Church() {
@@ -78,13 +78,10 @@ export default function Stage4Church() {
               <button onClick={replayChurchKiss} className="arcade-btn btn-red">
                 💋 ALTAR KISS
               </button>
-              <button onClick={downloadIcsCalendar} className="arcade-btn btn-gold">
-                📅 SAVE .ICS
-              </button>
               <button onClick={openGoogleCalendar} className="arcade-btn btn-cyan">
                 🌐 GOOGLE CAL
               </button>
-              <button onClick={() => walkToStage(7)} className="arcade-btn btn-cream">
+              <button onClick={() => walkToStage(7)} className="arcade-btn btn-cream church-rsvp">
                 🎬 RSVP
               </button>
               <a

@@ -1597,7 +1597,7 @@
         .program-list { list-style: none; display: flex; flex-direction: column; gap: 3px; font-size: 14.5px; flex: 1; min-width: 170px; }
         .church-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
         .church-actions .arcade-btn { white-space: normal; }
-        .church-maps { grid-column: 1 / -1; }
+        .church-rsvp, .church-maps { grid-column: 1 / -1; }
 
         /* Stage 6: ending credits */
         .credits-cabinet {
