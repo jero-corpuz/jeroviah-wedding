@@ -8,14 +8,33 @@ export interface CustomCanvas extends HTMLCanvasElement {
   bodyW: number;
 }
 
+        // Parsed colors are memoised: the same few palette entries are mixed every frame
+        const RGB_CACHE = new Map();
         export function hexRgb(hex) {
-            const n = parseInt(hex.replace('#', ''), 16);
-            return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+            let rgb = RGB_CACHE.get(hex);
+            if (!rgb) {
+                const n = parseInt(hex.slice(1), 16);
+                rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+                if (RGB_CACHE.size > 512) RGB_CACHE.clear();
+                RGB_CACHE.set(hex, rgb);
+            }
+            return rgb;
         }
+        // Returns #rrggbb so a mixed color can be mixed again (shades of shades)
         export function mixCol(a, b, t) {
-            const [r1, g1, b1] = hexRgb(a);
-            const [r2, g2, b2] = hexRgb(b);
-            return `rgb(${Math.round(r1 + (r2 - r1) * t)},${Math.round(g1 + (g2 - g1) * t)},${Math.round(b1 + (b2 - b1) * t)})`;
+            const ca = hexRgb(a), cb = hexRgb(b);
+            const r = Math.round(ca[0] + (cb[0] - ca[0]) * t);
+            const g = Math.round(ca[1] + (cb[1] - ca[1]) * t);
+            const bl = Math.round(ca[2] + (cb[2] - ca[2]) * t);
+            return '#' + ((1 << 24) | (r << 16) | (g << 8) | bl).toString(16).slice(1);
+        }
+        // Color along a ramp of [position, hex] stops (positions ascending)
+        export function rampCol(stops, t) {
+            if (t <= stops[0][0]) return stops[0][1];
+            for (let i = 1; i < stops.length; i++) {
+                if (t <= stops[i][0]) return mixCol(stops[i - 1][1], stops[i][1], (t - stops[i - 1][0]) / (stops[i][0] - stops[i - 1][0]));
+            }
+            return stops[stops.length - 1][1];
         }
 
 
@@ -332,16 +351,15 @@ export interface CustomCanvas extends HTMLCanvasElement {
             ctx.fillRect(Math.round(x - b), baseY - trunkH, b * 2, trunkH);
             const rows = Math.max(3, Math.floor((h - trunkH) / b));
             const per = rows / 3;
-            for (let r = 0; r < rows; r++) {
-                const tier = Math.min(2, Math.floor(r / per));
-                const local = r - tier * per;
-                const half = Math.round((1 + local * 0.85 + tier * 1.3) * b / b) * b;
-                const off = Math.round(sway * (1 - r / rows));
-                const yy = baseY - trunkH - (rows - r) * b;
-                ctx.fillStyle = col;
-                ctx.fillRect(Math.round(x - half + off), yy, half, b);
-                ctx.fillStyle = shade;
-                ctx.fillRect(Math.round(x + off), yy, half, b);
+            // Lit half first, then the shaded half: two fillStyle changes per tree instead of two per row
+            for (let pass = 0; pass < 2; pass++) {
+                ctx.fillStyle = pass ? shade : col;
+                for (let r = 0; r < rows; r++) {
+                    const tier = Math.min(2, Math.floor(r / per));
+                    const half = Math.round(1 + (r - tier * per) * 0.85 + tier * 1.3) * b;
+                    const off = Math.round(sway * (1 - r / rows));
+                    ctx.fillRect(Math.round(pass ? x + off : x - half + off), baseY - trunkH - (rows - r) * b, half, b);
+                }
             }
         }
 
@@ -446,19 +464,50 @@ export interface CustomCanvas extends HTMLCanvasElement {
             ctx.drawImage(moonSprite(), Math.round(mx - 28), Math.round(my - 28));
         }
 
+        /* Layout is only measured after something actually resized: reading clientWidth / clientHeight
+           every frame forces style & layout work, and the answer almost never changes. */
+        let layoutEpoch = 0;
+        let layoutObserver = null;
+        const CANVAS_BOX = new WeakMap();
+        export function invalidateLayout() { layoutEpoch++; }
+        if (typeof window !== 'undefined') {
+            window.addEventListener('resize', invalidateLayout);
+            if (typeof ResizeObserver !== 'undefined') layoutObserver = new ResizeObserver(invalidateLayout);
+        }
+
         // Sizes a canvas's backing store to its CSS box × devicePixelRatio and returns CSS-pixel dims
         export function fitCanvasToBox(canvas) {
-            const dpr = Math.min(2, window.devicePixelRatio || 1);
-            const w = Math.max(1, canvas.clientWidth), h = Math.max(1, canvas.clientHeight);
-            const bw = Math.round(w * dpr), bh = Math.round(h * dpr);
-            if (canvas.width !== bw || canvas.height !== bh) {
-                canvas.width = bw;
-                canvas.height = bh;
+            let box = CANVAS_BOX.get(canvas);
+            if (!box) {
+                box = { ctx: canvas.getContext('2d'), W: 1, H: 1, sx: 1, sy: 1, epoch: -1 };
+                CANVAS_BOX.set(canvas, box);
+                if (layoutObserver) layoutObserver.observe(canvas);
             }
-            const ctx = canvas.getContext('2d');
-            ctx.setTransform(bw / w, 0, 0, bh / h, 0, 0);
-            ctx.imageSmoothingEnabled = false;
-            return { ctx, W: w, H: h };
+            if (box.epoch !== layoutEpoch) {
+                box.epoch = layoutEpoch;
+                const dpr = Math.min(2, window.devicePixelRatio || 1);
+                const w = Math.max(1, canvas.clientWidth), h = Math.max(1, canvas.clientHeight);
+                const bw = Math.round(w * dpr), bh = Math.round(h * dpr);
+                if (canvas.width !== bw || canvas.height !== bh) {
+                    canvas.width = bw;
+                    canvas.height = bh;
+                }
+                box.W = w; box.H = h; box.sx = bw / w; box.sy = bh / h;
+            }
+            box.ctx.setTransform(box.sx, 0, 0, box.sy, 0, 0);
+            box.ctx.imageSmoothingEnabled = false;
+            return box;
+        }
+
+        // Height of the street strip behind the floor canvas (cached until the next resize)
+        const street = { el: null, h: 0, epoch: -1 };
+        export function streetHeight(fallback) {
+            if (street.epoch !== layoutEpoch || !street.el || !street.el.isConnected) {
+                street.epoch = layoutEpoch;
+                street.el = document.querySelector('.street-ground-backdrop');
+                street.h = street.el ? street.el.clientHeight : 0;
+            }
+            return street.h || fallback;
         }
 
         // Open-Air Foreground Street Parallax (Baguio Pine Planter Boxes & Vintage Wedding Garment Racks)
@@ -586,8 +635,7 @@ export interface CustomCanvas extends HTMLCanvasElement {
         export function drawRidingParty(ctx, W, H, u, floorY) {
             const s = 4.8 * u;                 // rider scale
             const k = 2.76 * u;                // scooter / wagon art-pixel size
-            const street = document.querySelector('.street-ground-backdrop');
-            const sh = street ? street.clientHeight : H * 0.7;
+            const sh = streetHeight(H * 0.7);
             const groundY = Math.round(H - sh * 0.4);   // wheels ride in the lane, just below the center line
             const wheelFrame = Math.floor(gameState.rideScroll / 5) % 2;
             const bump = i => Math.round(Math.max(0, Math.sin(gameState.tick * 0.45 + i * 1.3)) * 1.5 * u);
@@ -659,8 +707,7 @@ export interface CustomCanvas extends HTMLCanvasElement {
 
 
         export function drawMovingRoad(ctx, W, H) {
-            const street = document.querySelector('.street-ground-backdrop');
-            const sh = street ? street.clientHeight : H * 0.7;
+            const sh = streetHeight(H * 0.7);
             const top = H - sh;
             const off = gameState.rideScroll % 84;
             ctx.fillStyle = 'rgba(250, 204, 21, 0.45)';
@@ -670,8 +717,6 @@ export interface CustomCanvas extends HTMLCanvasElement {
             const joff = gameState.rideScroll % 140;
             for (let x = -joff; x < W; x += 140) ctx.fillRect(Math.round(x), top + 16, 3, sh - 16);
         }
-
-        // const floorDims = { W: typeof window !== "undefined" ? window.innerWidth : 1200, H: typeof window !== "undefined" ? window.innerHeight * 0.34 : 300, u: 1 };
 
         export function spriteGown(col, formal) {
             return makeSprite(`gown:${col}:${formal ? 'f' : 's'}`, 20, 40, (R, P) => {
@@ -760,36 +805,64 @@ export interface CustomCanvas extends HTMLCanvasElement {
         export const SKYLINE = [[70, 0.62], [92, 0.9], [58, 0.48], [110, 1], [76, 0.7], [64, 0.55], [98, 0.84], [72, 0.6], [104, 0.95], [56, 0.5], [88, 0.78], [80, 0.66], [62, 0.58], [96, 0.88]];
         export const SKYLINE_PERIOD = SKYLINE.reduce((s, [w]) => s + w + 4, 0);
 
+        // Each tower is painted once, at its tallest; frames only blit the part that is above the horizon.
+        // (Windows are laid out per tower, so they no longer flicker as the skyline scrolls.)
+        const SKYLINE_TALLEST = { far: 720, near: 560 };
+        function skylineTower(i, far) {
+            const key = `tower:${far ? 'f' : 'n'}:${i}`;
+            if (SPRITE_CACHE.has(key)) return SPRITE_CACHE.get(key);
+            const bw = SKYLINE[i][0];
+            const hf = far ? SKYLINE[(i + 5) % SKYLINE.length][1] : SKYLINE[i][1];
+            const body = far ? '#7c8ba1' : '#526178';
+            const c = document.createElement('canvas');
+            c.width = bw;
+            c.height = Math.round((far ? SKYLINE_TALLEST.far : SKYLINE_TALLEST.near) * hf);
+            const g = c.getContext('2d');
+            g.fillStyle = '#0b0b14'; g.fillRect(0, 0, bw, c.height);
+            g.fillStyle = body; g.fillRect(2, 2, bw - 4, c.height - 2);
+            g.fillStyle = mixCol(body, '#ffffff', 0.2); g.fillRect(2, 2, bw - 4, 3);
+            g.fillStyle = mixCol(body, '#000000', 0.18); g.fillRect(bw - 6, 5, 4, c.height - 5);   // shaded side
+            if (far) {
+                g.fillStyle = '#c7d2e3';
+                for (let wy = 12; wy < c.height; wy += 18) g.fillRect(6, wy, bw - 12, 3);
+            } else {
+                for (let wy = 10, row = 0; wy < c.height; wy += 14, row++) {
+                    for (let wx = 6, col = 0; wx < bw - 10; wx += 12, col++) {
+                        const lit = ((col * 3 + row * 5 + i * 2) % 7) < 2;
+                        g.fillStyle = lit ? '#fef9c3' : '#bfdbfe';
+                        g.fillRect(wx, wy, 7, 8);
+                        g.fillStyle = lit ? '#ffffff' : '#dbeafe';
+                        g.fillRect(wx, wy, 3, 2);                                                  // glass glint
+                    }
+                }
+            }
+            c.body = body;
+            SPRITE_CACHE.set(key, c);
+            return c;
+        }
+
         export function drawCitySkyline(ctx, W, H, amt, far) {
             if (amt <= 0) return;
             const speed = far ? 90 : 160;
             const maxH = H * (far ? 0.82 : 0.6) * amt;
             const shift = (gameState.worldProgress * speed) % SKYLINE_PERIOD;
-            const body = far ? '#7c8ba1' : '#526178';
-            const winA = far ? '#c7d2e3' : '#bfdbfe';
-            for (let base = -shift - SKYLINE_PERIOD; base < W + SKYLINE_PERIOD; base += SKYLINE_PERIOD) {
+            for (let base = -shift - SKYLINE_PERIOD; base < W; base += SKYLINE_PERIOD) {
                 let x = base;
-                SKYLINE.forEach(([bw, hf], i) => {
-                    const k = far ? (i + 5) % SKYLINE.length : i;
-                    const h = Math.round(maxH * (far ? SKYLINE[k][1] : hf));
-                    if (x + bw > 0 && x < W && h > 4) {
-                        const y = H - h;
-                        ctx.fillStyle = '#0b0b14'; ctx.fillRect(Math.round(x), y, bw, h);
-                        ctx.fillStyle = body; ctx.fillRect(Math.round(x) + 2, y + 2, bw - 4, h - 2);
-                        ctx.fillStyle = mixCol(body, '#ffffff', 0.2); ctx.fillRect(Math.round(x) + 2, y + 2, bw - 4, 3);
-                        if (!far) {
-                            for (let wy = y + 10; wy < H - 8; wy += 14) {
-                                for (let wx = Math.round(x) + 6; wx < x + bw - 10; wx += 12) {
-                                    ctx.fillStyle = ((wx + wy + i) % 7) < 2 ? '#fef9c3' : winA;
-                                    ctx.fillRect(wx, wy, 7, 8);
-                                }
+                for (let i = 0; i < SKYLINE.length; i++) {
+                    const bw = SKYLINE[i][0];
+                    if (x + bw > 0 && x < W) {
+                        const spr = skylineTower(i, far);
+                        const h = Math.round(maxH * (far ? SKYLINE[(i + 5) % SKYLINE.length][1] : SKYLINE[i][1]));
+                        if (h > 4) {
+                            const dx = Math.round(x), vis = Math.min(h, spr.height);
+                            ctx.drawImage(spr, 0, 0, bw, vis, dx, H - h, bw, vis);
+                            if (h > vis) {                      // very tall screens: extend the wall below the sprite
+                                ctx.fillStyle = '#0b0b14'; ctx.fillRect(dx, H - h + vis, bw, h - vis);
+                                ctx.fillStyle = spr.body; ctx.fillRect(dx + 2, H - h + vis, bw - 4, h - vis);
                             }
-                        } else {
-                            ctx.fillStyle = winA;
-                            for (let wy = y + 12; wy < H - 8; wy += 18) ctx.fillRect(Math.round(x) + 6, wy, bw - 12, 3);
                         }
                     }
                     x += bw + 4;
-                });
+                }
             }
         }

@@ -34,6 +34,80 @@ if (typeof window !== 'undefined') {
 
 let outfitClock = 0;
 
+/* Stage canvases are looked up once (and again only if React replaced the element), and the parts of each
+   diorama that never change are painted once into an offscreen layer and blitted every frame. */
+const STAGE_CANVASES = new Map();
+function stageCanvas(id) {
+  let entry = STAGE_CANVASES.get(id);
+  if (!entry || !entry.c.isConnected) {
+    const c = document.getElementById(id);
+    if (!c) return null;
+    entry = { c, ctx: c.getContext('2d') };
+    STAGE_CANVASES.set(id, entry);
+  }
+  return entry;
+}
+
+const STATIC_LAYERS = new Map();
+function staticLayer(key, W, H, paint) {
+  let layer = STATIC_LAYERS.get(key);
+  if (!layer || layer.width !== W || layer.height !== H) {
+    layer = document.createElement('canvas');
+    layer.width = W;
+    layer.height = H;
+    const g = layer.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    paint(g);
+    STATIC_LAYERS.set(key, layer);
+  }
+  return layer;
+}
+// Layers contain text, so they are repainted once the pixel font has loaded
+export function invalidateStaticLayers() { STATIC_LAYERS.clear(); }
+
+// Deterministic 2px speckles (grass tufts, stone grain) inside a rectangle
+function speckle(g, x, y, w, h, col, count, seed) {
+  g.fillStyle = col;
+  let n = seed;
+  for (let i = 0; i < count; i++) {
+    n = (n * 1103515245 + 12345) & 0x7fffffff;
+    const px = x + (n % Math.max(1, Math.floor(w / 2))) * 2;
+    n = (n * 1103515245 + 12345) & 0x7fffffff;
+    const py = y + (n % Math.max(1, Math.floor(h / 2))) * 2;
+    g.fillRect(px, py, 2, 2);
+  }
+}
+// Offset courses of stone blocks
+function stoneCourses(g, x, y, w, h, light, dark) {
+  for (let row = 0, by = y; by < y + h; by += 12, row++) {
+    for (let bx = x - (row % 2) * 14; bx < x + w; bx += 28) {
+      const x0 = Math.max(x, bx), x1 = Math.min(x + w, bx + 26);
+      g.fillStyle = ((bx - x) / 28 + row) % 3 === 0 ? dark : light;
+      g.fillRect(x0, by, x1 - x0, Math.min(10, y + h - by));
+    }
+  }
+}
+// Rows of shingles clipped to a gable triangle
+function shingles(g, x0, y0, apexX, apexY, x1, col) {
+  g.save();
+  g.beginPath(); g.moveTo(x0, y0); g.lineTo(apexX, apexY); g.lineTo(x1, y0); g.closePath(); g.clip();
+  g.fillStyle = col;
+  for (let y = apexY + 6, row = 0; y < y0; y += 7, row++) {
+    g.fillRect(x0, y, x1 - x0, 2);
+    for (let x = x0 + (row % 2) * 9; x < x1; x += 18) g.fillRect(x, y - 5, 2, 5);
+  }
+  g.restore();
+}
+// Soft square glow around a lamp / lit window (drawn per frame so it can flicker)
+function lampGlow(ctx, x, y, r, col, alpha) {
+  ctx.fillStyle = col;
+  ctx.globalAlpha = alpha * 0.45;
+  ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  ctx.globalAlpha = alpha;
+  ctx.fillRect(x - r / 2, y - r / 2, r, r);
+  ctx.globalAlpha = 1;
+}
+
         export function drawSf2Big(canvas, idx) {
             if (!canvas) return;
             const img = PORTRAIT_IMGS[idx];
@@ -132,16 +206,11 @@ let outfitClock = 0;
             }
         }
 
-        export function renderSf2SelectMap() {
-            const c = document.getElementById('sf2MapCanvas');
-            if (!c) return;
-            const ctx = c.getContext('2d');
-            const W = c.width, H = c.height;
-            ctx.clearRect(0, 0, W, H);
-
-            // Deep SF2 Royal Blue Ocean Background
+        function paintSf2Map(ctx, W, H) {
+            // Deep SF2 Royal Blue Ocean Background with wave flecks
             ctx.fillStyle = '#000048';
             ctx.fillRect(0, 0, W, H);
+            speckle(ctx, 0, 0, W, H, '#0b1a7a', 90, 7);
 
             // Stylized Pixel Continent / Archipelago Map (SF2 World Map tan & coastline)
             const landBlocks = [
@@ -160,6 +229,7 @@ let outfitClock = 0;
             // Inner terrain highlight
             ctx.fillStyle = '#d9a773';
             landBlocks.forEach(([x, y, w, h]) => ctx.fillRect(x + 6, y + 6, w - 12, h - 14));
+            landBlocks.forEach(([x, y, w, h], i) => speckle(ctx, x + 8, y + 8, w - 16, h - 18, '#c9975f', 26, 11 + i));
 
             // Dotted Co-Op Flight/Road Route Connecting All Quest Pins
             ctx.strokeStyle = '#ffffff';
@@ -173,6 +243,16 @@ let outfitClock = 0;
             });
             ctx.stroke();
             ctx.setLineDash([]);
+        }
+
+        export function renderSf2SelectMap() {
+            const entry = stageCanvas('sf2MapCanvas');
+            if (!entry) return;
+            const { c, ctx } = entry;
+            const W = c.width, H = c.height;
+            ctx.drawImage(staticLayer('sf2map', W, H, g => paintSf2Map(g, W, H)), 0, 0);
+            ctx.font = 'bold 6px "Press Start 2P", monospace';
+            ctx.textAlign = 'center';
 
             // Render Flag Boxes & Labels on the Map
             SF2_ROSTER_DATA.forEach((hero, i) => {
@@ -198,8 +278,6 @@ let outfitClock = 0;
                 }
 
                 // Stage Name under Flag
-                ctx.font = 'bold 6px "Press Start 2P", monospace';
-                ctx.textAlign = 'center';
                 ctx.fillStyle = '#000000';
                 ctx.fillText(hero.mapStage, hx + 1, hy + 8);
                 ctx.fillStyle = isSelected ? '#fde047' : '#e2e8f0';
@@ -317,22 +395,11 @@ let outfitClock = 0;
             });
         }
 
-        export function renderTeachersCampHill() {
-            const c = document.getElementById('teachersCampHillCanvas');
-            if (!c) return;
-            const ctx = c.getContext('2d');
-            const W = c.width, H = c.height;
-            ctx.clearRect(0, 0, W, H);
+        const CAMP = { hx: 140, hy: 46, hw: 380, hh: 158, stairTopY: 202, stairBotY: 362 };
 
-            gameState.campDanceBoostTimer = Math.max(0, gameState.campDanceBoostTimer - gameState.dtf);
-
-            // 1. Background Benguet Pine Trees Flanking the Heritage Hill
-            const sway = Math.sin(gameState.tick * 0.04) * 2;
-            [38, 92, 148, 505, 562, 614].forEach((px, idx) => {
-                const py = 105 + (idx % 2) * 18;
-                drawPixelPine(ctx, px + 18, py + 108, 108, '#2d6a4f', '#1b4332', '#3b2314', sway);
-            });
-
+        // Hill, White Hall & staircase: everything that never moves
+        function paintCampScene(ctx, W) {
+            const { hx, hy, hw, hh, stairTopY, stairBotY } = CAMP;
             // 2. Terraced Baguio Green Pine Hill & Stone Retaining Walls
             // Upper hill lawn
             ctx.fillStyle = '#0f172a';
@@ -345,11 +412,14 @@ let outfitClock = 0;
             // Middle stone retaining wall & hydrangea flower bushes
             ctx.fillStyle = '#475569';
             ctx.fillRect(42, 252, 576, 36);
-            for (let bx = 48; bx < 610; bx += 28) {
-                ctx.fillStyle = (bx / 28) % 2 === 0 ? '#64748b' : '#94a3b8';
+            for (let bx = 48, n = 0; bx < 610; bx += 28, n++) {
+                ctx.fillStyle = n % 2 === 0 ? '#64748b' : '#94a3b8';
                 ctx.fillRect(bx, 256, 24, 12);
+                ctx.fillStyle = n % 2 === 0 ? '#94a3b8' : '#7c8aa0';
                 ctx.fillRect(bx + 6, 272, 20, 12);
             }
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.35)';
+            ctx.fillRect(42, 252, 576, 3);                              // shadow under the lawn's lip
 
             // Lower sloped lawn meeting the sidewalk curb
             ctx.fillStyle = '#14532d';
@@ -367,8 +437,13 @@ let outfitClock = 0;
                 ctx.fillRect(fx + 15, 236, 8, 8);
             });
 
+            // Grass tufts & wild flowers on the lawns
+            speckle(ctx, 60, 214, 540, 22, '#40916c', 70, 3);
+            speckle(ctx, 16, 304, 628, 62, '#15803d', 150, 5);
+            speckle(ctx, 16, 310, 628, 54, '#0f3d22', 90, 9);
+            speckle(ctx, 16, 312, 628, 50, '#fde047', 14, 21);
+
             // 3. OLD AMERICAN COLONIAL WHITE HERITAGE HOUSE (Teacher's Camp White Hall)
-            const hx = 140, hy = 46, hw = 380, hh = 158;
 
             // Brick Chimneys
             ctx.fillStyle = '#000';
@@ -395,10 +470,11 @@ let outfitClock = 0;
             ctx.closePath();
             ctx.fill();
 
-            // Roof Shingle Ridges
+            // Roof shingles & a lit ridge line
+            shingles(ctx, hx - 12, hy + 35, hx + hw / 2, hy - 22, hx + hw + 12, '#0f3d22');
             ctx.fillStyle = '#166534';
-            ctx.fillRect(hx + 28, hy + 20, hw - 56, 5);
-            ctx.fillRect(hx + 68, hy + 7, hw - 136, 5);
+            ctx.fillRect(hx + 28, hy + 20, hw - 56, 3);
+            ctx.fillRect(hx + 68, hy + 7, hw - 136, 3);
 
             // White Colonial Clapboard Siding Body
             ctx.fillStyle = '#000';
@@ -411,6 +487,9 @@ let outfitClock = 0;
             for (let sy = hy + 46; sy < hy + hh; sy += 8) {
                 ctx.fillRect(hx + 2, sy, hw - 4, 2);
             }
+            // Shadow cast by the eaves
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.22)';
+            ctx.fillRect(hx, hy + 38, hw, 6);
 
             // Center Triangular Pediment Gable over the Front Porch
             ctx.fillStyle = '#000';
@@ -490,15 +569,7 @@ let outfitClock = 0;
                 ctx.fillRect(rx + (hw - 136), porchY - 16, 3, 16);
             }
 
-            // Warm String Lights Hanging Across the White Hall Porch
-            for (let lx = hx + 16; lx < hx + hw - 16; lx += 22) {
-                ctx.fillStyle = (Math.floor(gameState.tick / 10) + lx) % 2 === 0 ? '#fde047' : '#fb7185';
-                ctx.fillRect(lx, hy + 98, 5, 5);
-            }
-
             // 4. GRAND HERITAGE STONE STAIRCASE UP THE HILL (From Bottom Street y=356 to Porch y=200)
-            const stairTopY = 202;
-            const stairBotY = 362;
             const numSteps = 12;
             for (let i = 0; i < numSteps; i++) {
                 const t = i / (numSteps - 1);
@@ -511,6 +582,10 @@ let outfitClock = 0;
                 ctx.fillRect(sx - 6, sy, sw + 12, 15);
                 ctx.fillStyle = i % 2 === 0 ? '#cbd5e1' : '#94a3b8';
                 ctx.fillRect(sx, sy + 2, sw, 11);
+                ctx.fillStyle = 'rgba(255,255,255,0.45)';
+                ctx.fillRect(sx, sy + 2, sw, 2);                       // lit front edge of the tread
+                ctx.fillStyle = 'rgba(15,23,42,0.18)';
+                ctx.fillRect(sx, sy + 10, sw, 3);
 
                 // Stepped White Stone Balustrades on Both Sides
                 ctx.fillStyle = '#f8fafc';
@@ -527,7 +602,55 @@ let outfitClock = 0;
                 }
             }
 
+        }
+
+        export function renderTeachersCampHill() {
+            const entry = stageCanvas('teachersCampHillCanvas');
+            if (!entry) return;
+            const { c, ctx } = entry;
+            const W = c.width, H = c.height;
+            const { hx, hy, hw, stairTopY, stairBotY } = CAMP;
+            const tick = gameState.tick;
+            ctx.clearRect(0, 0, W, H);
+
+            gameState.campDanceBoostTimer = Math.max(0, gameState.campDanceBoostTimer - gameState.dtf);
+
+            // 1. Background Benguet Pine Trees Flanking the Heritage Hill
+            const sway = Math.sin(tick * 0.04) * 2;
+            [38, 92, 148, 505, 562, 614].forEach((px, idx) => {
+                const py = 105 + (idx % 2) * 18;
+                drawPixelPine(ctx, px + 18, py + 108, 108, '#2d6a4f', '#1b4332', '#3b2314', sway);
+            });
+
+            // 2-4. Hill, White Hall & staircase
+            ctx.drawImage(staticLayer('camp', W, H, g => paintCampScene(g, W)), 0, 0);
+
+            // Golden-hour glow in the windows & stair lanterns
+            const flick = 0.16 + Math.sin(tick * 0.13) * 0.04;
+            [hx + 24, hx + 76, hx + hw - 104, hx + hw - 52].forEach(wx => {
+                lampGlow(ctx, wx + 12, hy + 63, 20, '#fde047', flick * 0.7);
+                lampGlow(ctx, wx + 12, hy + 123, 20, '#fde047', flick * 0.7);
+            });
+            [0, 5, 11].forEach((i, k) => {
+                const t = i / 11;
+                const sy = stairTopY + t * (stairBotY - stairTopY - 12), sw = 96 + t * 68, sx = W * 0.5 - sw * 0.5;
+                const a = 0.3 + Math.sin(tick * 0.17 + k * 2) * 0.08;
+                lampGlow(ctx, Math.round(sx - 3), Math.round(sy - 16), 10, '#fde047', a);
+                lampGlow(ctx, Math.round(sx + sw + 3), Math.round(sy - 16), 10, '#fde047', a);
+            });
+
+            // Warm String Lights Hanging Across the White Hall Porch
+            for (let lx = hx + 16, n = 0; lx < hx + hw - 16; lx += 22, n++) {
+                const on = (Math.floor(tick / 10) + n) % 2 === 0;
+                ctx.fillStyle = '#1f2937';
+                ctx.fillRect(lx + 5, hy + 96 + (n % 2), 17, 1);       // the wire
+                lampGlow(ctx, lx + 2, hy + 100, 5, on ? '#fde047' : '#fb7185', 0.35);
+                ctx.fillStyle = on ? '#fde047' : '#fb7185';
+                ctx.fillRect(lx, hy + 98, 5, 5);
+            }
+
             // 5. ANIMATE JERO, VIAH & THEIR 3 DOGS CLIMBING THE STAIRS & DANCING ON THE PORCH!
+            ctx.textAlign = 'center';
             const prog = Math.max(0.05, gameState.campClimbProgress);
             const charScale = 2.45 - prog * 0.25;
 
@@ -613,16 +736,12 @@ let outfitClock = 0;
 
                 export const OUTFIT_CYCLE = ['formal', 'semi', 'wedding'];
 
-        export function renderCityShops() {
-            const c = document.getElementById('cityShopsCanvas');
-            if (!c) return;
-            const ctx = c.getContext('2d');
-            const W = c.width, H = c.height;
-            ctx.clearRect(0, 0, W, H);
-            ctx.imageSmoothingEnabled = false;
-            gameState.shopSparkleTimer = Math.max(0, gameState.shopSparkleTimer - gameState.dtf);
-            outfitClock += gameState.dtf * (gameState.shopSparkleTimer > 0 ? 2 : 1);
+        const SHOPS = { shopW: 150, top: 150, floorY: 336, cx: 300 };
+        const shopBeacons = [];   // rooftop antenna lights, positioned by the static pass
 
+        function paintShopsScene(ctx, W, H) {
+            const { shopW, top, floorY, cx } = SHOPS;
+            shopBeacons.length = 0;
             // 1. Dense row of tall city buildings across the whole backdrop
             let bx = -6, bi = 0;
             while (bx < W) {
@@ -651,15 +770,15 @@ let outfitClock = 0;
                     ctx.fillStyle = '#78350f'; ctx.fillRect(bx + 12, by - 6, 16, 6);
                 } else if (bi % 4 === 3 && by > 4) {   // antenna
                     ctx.fillStyle = '#0b0b14'; ctx.fillRect(bx + bw / 2 - 1, by - 18, 2, 18);
-                    ctx.fillStyle = Math.floor(gameState.tick / 20) % 2 ? '#ef4444' : '#7f1d1d';
-                    ctx.fillRect(bx + bw / 2 - 2, by - 20, 4, 3);
+                    shopBeacons.push([bx + bw / 2 - 2, by - 20]);
                 }
+                ctx.fillStyle = 'rgba(11, 11, 20, 0.2)';
+                ctx.fillRect(bx + bw - 8, by + 6, 6, 154 - by);   // shaded side wall
                 bx += bw + 2;
                 bi++;
             }
 
             // 2. Four boutiques, one per motif color
-            const shopW = 150, top = 150, floorY = 336;
             MOTIF_COLORS.forEach((m, i) => {
                 const x = 10 + i * 160;
                 const formal = i < 2;
@@ -696,12 +815,6 @@ let outfitClock = 0;
                 ctx.fillStyle = 'rgba(255,255,255,0.35)';
                 ctx.beginPath(); ctx.moveTo(wx + 6, wy + wh); ctx.lineTo(wx + 34, wy); ctx.lineTo(wx + 44, wy); ctx.lineTo(wx + 16, wy + wh); ctx.closePath(); ctx.fill();
                 ctx.beginPath(); ctx.moveTo(wx + 84, wy + wh); ctx.lineTo(wx + 104, wy); ctx.lineTo(wx + 108, wy); ctx.lineTo(wx + 88, wy + wh); ctx.closePath(); ctx.fill();
-                const sparkleOn = gameState.shopSparkleTimer > 0 ? Math.floor(gameState.tick / 4) % 2 === 0 : Math.floor((gameState.tick + i * 37) / 30) % 6 === 0;
-                if (sparkleOn) {
-                    const spx = wx + 20 + ((i * 41) % 90), spy = wy + 14 + ((i * 23) % 50);
-                    ctx.fillStyle = '#ffffff';
-                    ctx.fillRect(spx - 1, spy - 5, 2, 10); ctx.fillRect(spx - 5, spy - 1, 10, 2);
-                }
                 ctx.fillStyle = dark; ctx.fillRect(x, floorY - 6, shopW, 6);
             });
 
@@ -711,6 +824,9 @@ let outfitClock = 0;
             ctx.fillStyle = '#9aa1ad';
             for (let tx = 0; tx < W; tx += 40) ctx.fillRect(tx, floorY + 2, 2, H - floorY);
             ctx.fillRect(0, floorY + 16, W, 2);
+            speckle(ctx, 0, floorY + 4, W, H - floorY - 6, '#a6adb9', 70, 13);
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.18)';
+            ctx.fillRect(0, floorY + 2, W, 4);                        // shadow at the foot of the shopfronts
 
             // 4. Street lamps between shops
             [165, 325, 485].forEach(lx => {
@@ -718,6 +834,8 @@ let outfitClock = 0;
                 ctx.fillStyle = '#334155'; ctx.fillRect(lx - 2, 122, 4, floorY - 122);
                 ctx.fillStyle = '#0b0b14'; ctx.fillRect(lx - 9, 108, 18, 14);
                 ctx.fillStyle = '#fef08a'; ctx.fillRect(lx - 6, 111, 12, 8);
+                ctx.fillStyle = '#ffffff'; ctx.fillRect(lx - 6, 111, 4, 3);
+                ctx.fillStyle = '#0b0b14'; ctx.fillRect(lx - 7, floorY - 4, 14, 6);     // lamp base
             });
 
             // 5. "No white" sidewalk A-frame sign (front of the last shop)
@@ -737,15 +855,7 @@ let outfitClock = 0;
             ctx.font = 'bold 5px "Press Start 2P", monospace';
             ctx.fillText('FOR THE BRIDE', scx, ay + 47);
 
-            // 6. Fitting-room podium: Jero & Viah change outfits — formal → semi-formal → wedding
-            const STEP = 150;
-            const step = Math.floor(outfitClock / STEP);
-            const look = OUTFIT_CYCLE[step % OUTFIT_CYCLE.length];
-            const motif = MOTIF_COLORS[Math.floor(step / OUTFIT_CYCLE.length) % MOTIF_COLORS.length];
-            const col = look === 'wedding' ? null : motif.hex;
-            const local = outfitClock % STEP;
-            const cx = 300;
-
+            // 6. Fitting-room podium
             ctx.fillStyle = '#0b0b14'; ctx.fillRect(cx - 84, 354, 168, 12);
             ctx.fillStyle = '#f5e6c8'; ctx.fillRect(cx - 82, 356, 164, 5);
             ctx.fillStyle = '#d4a373'; ctx.fillRect(cx - 82, 361, 164, 3);
@@ -756,8 +866,45 @@ let outfitClock = 0;
                 ctx.fillStyle = '#be123c'; ctx.fillRect(px + 3, 246, 3, 116); ctx.fillRect(px + 11, 246, 3, 116);
                 ctx.fillStyle = '#facc15'; ctx.fillRect(px, 244, 18, 3);
             });
+        }
 
-            const bob = Math.floor(gameState.tick / 18) % 2 === 0 ? 0 : -1;
+        export function renderCityShops() {
+            const entry = stageCanvas('cityShopsCanvas');
+            if (!entry) return;
+            const { c, ctx } = entry;
+            const W = c.width, H = c.height;
+            const { top, cx } = SHOPS;
+            const tick = gameState.tick;
+            ctx.imageSmoothingEnabled = false;
+            ctx.textAlign = 'center';
+            gameState.shopSparkleTimer = Math.max(0, gameState.shopSparkleTimer - gameState.dtf);
+            outfitClock += gameState.dtf * (gameState.shopSparkleTimer > 0 ? 2 : 1);
+
+            // 1-5. Skyline, boutiques, sidewalk, lamps & podium
+            ctx.clearRect(0, 0, W, H);
+            ctx.drawImage(staticLayer('shops', W, H, g => paintShopsScene(g, W, H)), 0, 0);
+
+            // Blinking rooftop beacons & window sparkles
+            ctx.fillStyle = Math.floor(tick / 20) % 2 ? '#ef4444' : '#7f1d1d';
+            shopBeacons.forEach(([x, y]) => ctx.fillRect(x, y, 4, 3));
+            ctx.fillStyle = '#ffffff';
+            for (let i = 0; i < MOTIF_COLORS.length; i++) {
+                const sparkleOn = gameState.shopSparkleTimer > 0 ? Math.floor(tick / 4) % 2 === 0 : Math.floor((tick + i * 37) / 30) % 6 === 0;
+                if (!sparkleOn) continue;
+                const spx = 18 + i * 160 + 20 + ((i * 41) % 90), spy = top + 60 + 14 + ((i * 23) % 50);
+                ctx.fillRect(spx - 1, spy - 5, 2, 10); ctx.fillRect(spx - 5, spy - 1, 10, 2);
+                ctx.fillRect(spx - 2, spy - 2, 4, 4);
+            }
+
+            // 6. Jero & Viah change outfits on the podium — formal → semi-formal → wedding
+            const STEP = 150;
+            const step = Math.floor(outfitClock / STEP);
+            const look = OUTFIT_CYCLE[step % OUTFIT_CYCLE.length];
+            const motif = MOTIF_COLORS[Math.floor(step / OUTFIT_CYCLE.length) % MOTIF_COLORS.length];
+            const col = look === 'wedding' ? null : motif.hex;
+            const local = outfitClock % STEP;
+
+            const bob = Math.floor(tick / 18) % 2 === 0 ? 0 : -1;
             drawJeroBrawler(ctx, cx - 52, 303 + bob, 2.5, 0, false, 1, false, look, col);
             drawViahBrawler(ctx, cx + 8, 303 - bob, 2.5, 0, false, -1, false, look, col);
 
@@ -802,71 +949,59 @@ let outfitClock = 0;
         }
 
         
-        export function renderStadium() {
-            const c = document.getElementById('stadiumCanvas');
-            if (!c) return;
-            const ctx = c.getContext('2d');
-            const W = c.width, H = c.height;
-            ctx.clearRect(0, 0, W, H);
-            ctx.imageSmoothingEnabled = false;
-            gameState.crowdWaveTimer = Math.max(0, gameState.crowdWaveTimer - gameState.dtf);
-            const waveSpeed = gameState.crowdWaveTimer > 0 ? 7 : 3.5;
-            const waveX = ((gameState.tick * waveSpeed) % (W + 260)) - 130;
-            const liftAt = x => { const d = Math.abs(x - waveX); return d < 40 ? 1 - d / 40 : 0; };
+        const STADIUM = { ROWS: 5, PER: 24, rowH: 34, fieldY: 260 };
+        const JUMBOTRON_MSGS = ['JERO ♥ VIAH', 'THE ENTOURAGE', 'MAKE SOME NOISE!', 'FEB 12, 2027'];
 
-            // 1. Floodlight towers
+        const BENCH_COLS = MOTIF_COLORS.map(m => [m.hex, mixCol(m.hex, '#000000', 0.3)]);
+        // Seat positions & both poses of every spectator, resolved once instead of 120 cache lookups a frame
+        let seatCache = null;
+        function stadiumSeats(W) {
+            if (seatCache && seatCache.W === W) return seatCache.seats;
+            const { ROWS, PER } = STADIUM;
+            const seats = [];
+            for (let r = 0; r < ROWS; r++) for (let i = 0; i < PER; i++) {
+                const x = 6 + i * (W / PER) + (r % 2) * 12;
+                const seed = (r * 31 + i * 7) % 64;
+                seats.push({ x, rx: Math.round(x), seed, down: spriteGuest(seed, false), up: spriteGuest(seed, true) });
+            }
+            seatCache = { W, seats };
+            return seats;
+        }
+
+        // Towers, stand wall, jumbotron housing & the concrete behind each row of seats
+        function paintStadiumBack(ctx, W) {
+            const { ROWS, rowH } = STADIUM;
             [16, 626].forEach(tx => {
                 ctx.fillStyle = '#0b0b14'; ctx.fillRect(tx + 6, 20, 6, 70);
                 ctx.fillStyle = '#64748b'; ctx.fillRect(tx + 7, 20, 4, 70);
                 ctx.fillStyle = '#0b0b14'; ctx.fillRect(tx - 4, 0, 26, 22);
                 for (let lx = 0; lx < 3; lx++) for (let ly = 0; ly < 2; ly++) {
                     ctx.fillStyle = '#fef9c3'; ctx.fillRect(tx - 2 + lx * 8, 2 + ly * 9, 6, 7);
+                    ctx.fillStyle = '#ffffff'; ctx.fillRect(tx - 2 + lx * 8, 2 + ly * 9, 3, 3);
                 }
             });
-
-            // 2. Upper stand wall & jumbotron
             ctx.fillStyle = '#0b0b14'; ctx.fillRect(0, 56, W, 22);
             ctx.fillStyle = '#cbd5e1'; ctx.fillRect(0, 58, W, 18);
+            ctx.fillStyle = '#e2e8f0'; ctx.fillRect(0, 58, W, 3);
             ctx.fillStyle = '#94a3b8';
             for (let x = 0; x < W; x += 30) ctx.fillRect(x, 58, 2, 18);
             ctx.fillStyle = '#0b0b14'; ctx.fillRect(214, 0, 232, 72);
             ctx.fillStyle = '#334155'; ctx.fillRect(218, 4, 224, 64);
+            ctx.fillStyle = '#475569'; ctx.fillRect(218, 4, 224, 2);
             ctx.fillStyle = '#0b1020'; ctx.fillRect(224, 10, 212, 52);
-            const msgs = ['JERO ♥ VIAH', 'THE ENTOURAGE', 'MAKE SOME NOISE!', 'FEB 12, 2027'];
-            const msg = msgs[Math.floor(gameState.tick / 150) % msgs.length];
-            ctx.font = 'bold 12px "Press Start 2P", monospace';
-            ctx.textAlign = 'center';
-            ctx.fillStyle = '#7f1d1d'; ctx.fillText(msg, 331, 43);
-            ctx.fillStyle = Math.floor(gameState.tick / 10) % 2 ? '#fde047' : '#fef08a'; ctx.fillText(msg, 330, 42);
-            for (let h = 0; h < 6; h++) {
-                const hx = 228 + ((gameState.tick * 1.2 + h * 36) % 200);
-                drawPixelHeart(ctx, hx, 14, 1, h % 2 ? '#ff2a85' : '#98B9D6');
-            }
-
-            // 3. Bleachers: 5 rows of guests, back to front, with a travelling crowd wave
-            const ROWS = 5, PER = 24, rowH = 34;
+            // LED grid on the screen
+            ctx.fillStyle = 'rgba(148, 163, 184, 0.08)';
+            for (let y = 12; y < 62; y += 4) ctx.fillRect(224, y, 212, 1);
             for (let r = 0; r < ROWS; r++) {
                 const rowY = 82 + r * rowH;
                 ctx.fillStyle = r % 2 ? '#e2e8f0' : '#cbd5e1';
                 ctx.fillRect(0, rowY + 4, W, rowH);
-                for (let i = 0; i < PER; i++) {
-                    const x = 6 + i * (W / PER) + (r % 2) * 12;
-                    const seed = (r * 31 + i * 7) % 64;
-                    const lift = liftAt(x + 12);
-                    const up = lift > 0.35;
-                    const idle = Math.floor((gameState.tick + seed * 9) / 40) % 7 === 0 ? -1 : 0;
-                    drawSprite(ctx, spriteGuest(seed, up), Math.round(x), Math.round(rowY - 8 - lift * 12 + idle), 2, false);
-                }
-                // Bench in a motif color covers their legs
-                const bench = MOTIF_COLORS[r % 4].hex;
-                ctx.fillStyle = '#0b0b14'; ctx.fillRect(0, rowY + 22, W, 14);
-                ctx.fillStyle = bench; ctx.fillRect(0, rowY + 24, W, 7);
-                ctx.fillStyle = mixCol(bench, '#000000', 0.3); ctx.fillRect(0, rowY + 31, W, 3);
-                ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(0, rowY + 24, W, 2);
             }
+        }
 
-            // 4. Front railing & field
-            const fieldY = 260;
+        // Railing & pitch, drawn over the front row
+        function paintStadiumFront(ctx, W, H) {
+            const { fieldY } = STADIUM;
             ctx.fillStyle = '#0b0b14'; ctx.fillRect(0, fieldY - 8, W, 8);
             ctx.fillStyle = '#e2e8f0'; ctx.fillRect(0, fieldY - 7, W, 3);
             for (let x = 4; x < W; x += 22) { ctx.fillStyle = '#94a3b8'; ctx.fillRect(x, fieldY - 7, 3, 7); }
@@ -874,9 +1009,60 @@ let outfitClock = 0;
                 ctx.fillStyle = (x / 40) % 2 ? '#3f8f4f' : '#4a9e5a';
                 ctx.fillRect(x, fieldY, 40, H - fieldY);
             }
+            speckle(ctx, 0, fieldY + 10, W, H - fieldY - 12, '#5fb36e', 120, 17);
+            speckle(ctx, 0, fieldY + 10, W, H - fieldY - 12, '#35803f', 90, 29);
+            ctx.fillStyle = 'rgba(11, 11, 20, 0.22)'; ctx.fillRect(0, fieldY, W, 4);   // shadow of the stand
             ctx.fillStyle = '#f8fafc';
             ctx.fillRect(0, fieldY + 6, W, 3);
             ctx.fillRect(W / 2 - 1, fieldY + 6, 3, H - fieldY);
+        }
+
+        export function renderStadium() {
+            const entry = stageCanvas('stadiumCanvas');
+            if (!entry) return;
+            const { c, ctx } = entry;
+            const W = c.width, H = c.height;
+            const { ROWS, PER, rowH } = STADIUM;
+            const tick = gameState.tick;
+            ctx.clearRect(0, 0, W, H);
+            ctx.imageSmoothingEnabled = false;
+            gameState.crowdWaveTimer = Math.max(0, gameState.crowdWaveTimer - gameState.dtf);
+            const waveSpeed = gameState.crowdWaveTimer > 0 ? 7 : 3.5;
+            const waveX = ((tick * waveSpeed) % (W + 260)) - 130;
+            const liftAt = x => { const d = Math.abs(x - waveX); return d < 40 ? 1 - d / 40 : 0; };
+
+            // 1-2. Floodlight towers, upper stand wall & jumbotron
+            ctx.drawImage(staticLayer('stadium:back', W, H, g => paintStadiumBack(g, W)), 0, 0);
+            const msg = JUMBOTRON_MSGS[Math.floor(tick / 150) % JUMBOTRON_MSGS.length];
+            ctx.font = 'bold 12px "Press Start 2P", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#7f1d1d'; ctx.fillText(msg, 331, 43);
+            ctx.fillStyle = Math.floor(tick / 10) % 2 ? '#fde047' : '#fef08a'; ctx.fillText(msg, 330, 42);
+            for (let h = 0; h < 6; h++) {
+                const hx = 228 + ((tick * 1.2 + h * 36) % 200);
+                drawPixelHeart(ctx, hx, 14, 1, h % 2 ? '#ff2a85' : '#98B9D6');
+            }
+
+            // 3. Bleachers: 5 rows of guests, back to front, with a travelling crowd wave
+            const seats = stadiumSeats(W);
+            for (let r = 0; r < ROWS; r++) {
+                const rowY = 82 + r * rowH;
+                for (let i = 0; i < PER; i++) {
+                    const seat = seats[r * PER + i];
+                    const lift = liftAt(seat.x + 12);
+                    const idle = Math.floor((tick + seat.seed * 9) / 40) % 7 === 0 ? -1 : 0;
+                    drawSprite(ctx, lift > 0.35 ? seat.up : seat.down, seat.rx, Math.round(rowY - 8 - lift * 12 + idle), 2, false);
+                }
+                // Bench in a motif color covers their legs
+                const bench = BENCH_COLS[r % 4];
+                ctx.fillStyle = '#0b0b14'; ctx.fillRect(0, rowY + 22, W, 14);
+                ctx.fillStyle = bench[0]; ctx.fillRect(0, rowY + 24, W, 7);
+                ctx.fillStyle = bench[1]; ctx.fillRect(0, rowY + 31, W, 3);
+                ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(0, rowY + 24, W, 2);
+            }
+
+            // 4. Front railing & field
+            ctx.drawImage(staticLayer('stadium:front', W, H, g => paintStadiumFront(g, W, H)), 0, 0);
 
             // 5. The entourage lined up on the field: groomsmen, the couple, bridesmaids & the pups
             const lineY = 300;
@@ -893,8 +1079,8 @@ let outfitClock = 0;
             // 6. Confetti while the wave is boosted
             if (gameState.crowdWaveTimer > 0) {
                 for (let p = 0; p < 40; p++) {
-                    const px = (p * 97 + gameState.tick * (1 + p % 3)) % W;
-                    const py = (p * 53 + gameState.tick * (1.5 + (p % 4) * 0.5)) % H;
+                    const px = (p * 97 + tick * (1 + p % 3)) % W;
+                    const py = (p * 53 + tick * (1.5 + (p % 4) * 0.5)) % H;
                     ctx.fillStyle = MOTIF_COLORS[p % 4].hex;
                     ctx.fillRect(Math.round(px), Math.round(py), 4, 3);
                 }
@@ -911,34 +1097,31 @@ let outfitClock = 0;
             gameState.combatPopups.push({ xRatio: 0.5, yRatio: 0.24, text: '🏟️ CROWD WAVE!', sub: '+500 HYPE', life: 100, color: '#fde047' });
         }
 
-        export function renderChurchHill() {
-            const c = document.getElementById('churchHillCanvas');
-            if (!c) return;
-            const ctx = c.getContext('2d');
-            const W = c.width, H = c.height;
-            ctx.clearRect(0, 0, W, H);
+        const CHURCH = { chX: 165, chY: 58, chW: 330, chH: 150, stairTopY: 206, stairBotY: 362 };
 
-            gameState.churchKissBoostTimer = Math.max(0, gameState.churchKissBoostTimer - gameState.dtf);
-
-            // 1. Starlit Pine Trees & Glowing Fairy Lights on the Church Hill
-            [42, 96, 518, 574].forEach((px, idx) => {
-                const py = 112 + (idx % 2) * 16;
-                drawPixelPine(ctx, px + 18, py + 104, 104, '#059669', '#065f46', '#1e1b4b');
-                ctx.fillStyle = (gameState.tick + idx * 7) % 20 < 10 ? '#fde047' : '#f472b6';
-                ctx.fillRect(px + 14, py + 34, 4, 4);
-                ctx.fillRect(px + 22, py + 54, 4, 4);
-                ctx.fillRect(px + 8, py + 72, 4, 4);
-            });
-
+        // Hill terraces, bell tower & spire (the bell swings in front of this, behind the nave roof)
+        function paintChurchBack(ctx, W) {
+            const cx = W * 0.5;
             // 2. Terraced Starlit Sanctuary Hill
             ctx.fillStyle = '#0f172a';
             ctx.fillRect(58, 202, 544, 168);
             ctx.fillStyle = '#2d6a4f';
             ctx.fillRect(62, 206, 536, 54);
-            ctx.fillStyle = '#64748b';
+            ctx.fillStyle = '#40916c';
+            ctx.fillRect(62, 206, 536, 10);
+            speckle(ctx, 62, 216, 536, 26, '#52b788', 60, 4);
+            ctx.fillStyle = '#475569';
             ctx.fillRect(42, 260, 576, 36);
+            stoneCourses(ctx, 44, 262, 572, 34, '#7c8aa0', '#64748b');
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.35)';
+            ctx.fillRect(42, 260, 576, 3);
             ctx.fillStyle = '#166534';
             ctx.fillRect(18, 296, 624, 74);
+            ctx.fillStyle = '#15803d';
+            ctx.fillRect(18, 296, 624, 12);
+            speckle(ctx, 18, 308, 624, 58, '#1a9148', 150, 6);
+            speckle(ctx, 18, 312, 624, 54, '#0f4a25', 90, 12);
+            speckle(ctx, 18, 312, 624, 54, '#fbcfe8', 14, 31);
 
             // White Bridal Rose Bushes Flanking the Church Terrace
             [82, 128, 174, 476, 522, 566].forEach((fx, i) => {
@@ -950,14 +1133,14 @@ let outfitClock = 0;
             });
 
             // 3. HILLTOP STONE & WHITE HERITAGE WEDDING CHURCH
-            const cx = W * 0.5;
-            const chX = 165, chY = 58, chW = 330, chH = 150;
-
             // Tall Central Bell Tower & Spire
             ctx.fillStyle = '#000';
             ctx.fillRect(cx - 42, 14, 84, 66);
             ctx.fillStyle = '#f8fafc';
             ctx.fillRect(cx - 38, 18, 76, 60);
+            ctx.fillStyle = '#cbd5e1';
+            ctx.fillRect(cx + 30, 18, 8, 60);                            // shaded side of the tower
+            for (let qy = 24; qy < 76; qy += 12) { ctx.fillRect(cx - 38, qy, 8, 6); }
 
             // Steep Spire Roof + Golden Cross at Peak
             ctx.fillStyle = '#0f172a';
@@ -973,16 +1156,17 @@ let outfitClock = 0;
             ctx.fillRect(cx - 3, 0, 6, 16);
             ctx.fillRect(cx - 8, 4, 16, 5);
 
-            // Open Belfry Arch & Swinging Golden Wedding Bell
+            // Open Belfry Arch
             ctx.fillStyle = '#1e1b4b';
             ctx.fillRect(cx - 20, 26, 40, 32);
-            const bellSwing = Math.sin(gameState.tick * 0.16) * 6;
-            ctx.fillStyle = '#facc15';
-            ctx.fillRect(cx - 10 + bellSwing, 32, 20, 16);
-            ctx.fillStyle = '#ca8a04';
-            ctx.fillRect(cx - 13 + bellSwing, 46, 26, 5);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(cx - 3 + bellSwing * 1.3, 51, 6, 4);
+            ctx.fillStyle = '#312e81';
+            ctx.fillRect(cx - 20, 26, 40, 3);
+        }
+
+        // Nave, windows, doors, floral arch & the carpeted staircase
+        function paintChurchFront(ctx, W) {
+            const cx = W * 0.5;
+            const { chX, chY, chW, chH, stairTopY, stairBotY } = CHURCH;
 
             // Main Church Gabled Roof
             ctx.fillStyle = '#000';
@@ -1000,12 +1184,16 @@ let outfitClock = 0;
             ctx.lineTo(chX + chW + 10, chY + 40);
             ctx.closePath();
             ctx.fill();
+            shingles(ctx, chX - 10, chY + 40, cx, chY - 8, chX + chW + 10, '#0f172a');
 
             // Main White Stone Church Facade
             ctx.fillStyle = '#000';
             ctx.fillRect(chX - 4, chY + 40, chW + 8, chH - 32);
             ctx.fillStyle = '#f8fafc';
             ctx.fillRect(chX, chY + 42, chW, chH - 36);
+            speckle(ctx, chX + 18, chY + 48, chW - 36, chH - 48, '#e2e8f0', 110, 8);
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.2)';
+            ctx.fillRect(chX, chY + 42, chW, 5);                         // shadow under the eaves
 
             // Stone Quoining Details on Corners
             ctx.fillStyle = '#cbd5e1';
@@ -1036,9 +1224,13 @@ let outfitClock = 0;
                 ctx.fillRect(wx + 3, chY + 96, 22, 50);
                 ctx.fillStyle = '#fb7185';
                 ctx.fillRect(wx + 6, chY + 102, 16, 18);
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(wx + 5, chY + 98, 4, 10);                   // glint on the glass
                 ctx.fillStyle = '#0f172a';
                 ctx.fillRect(wx + 13, chY + 96, 2, 50);
                 ctx.fillRect(wx + 3, chY + 122, 22, 2);
+                ctx.fillStyle = '#cbd5e1';
+                ctx.fillRect(wx - 2, chY + 150, 32, 4);                  // stone sill
             });
 
             // Grand Floral-Draped Mahogany Chapel Double Doors at the Top Landing
@@ -1058,14 +1250,19 @@ let outfitClock = 0;
             ctx.fillRect(cx - 40, chY + 96, 80, 12);
             ctx.fillRect(cx - 40, chY + 96, 10, 68);
             ctx.fillRect(cx + 30, chY + 96, 10, 68);
-            for (let fx = cx - 36; fx <= cx + 32; fx += 14) {
-                ctx.fillStyle = (fx % 28 === 0) ? '#ffffff' : '#ff2a85';
+            for (let fx = cx - 36, n = 0; fx <= cx + 32; fx += 14, n++) {
+                ctx.fillStyle = n % 2 === 0 ? '#ffffff' : '#ff2a85';
                 ctx.fillRect(fx, chY + 98, 6, 6);
+            }
+            // Blooms climbing both sides of the arch
+            for (let fy = chY + 112, n = 0; fy < chY + 160; fy += 12, n++) {
+                ctx.fillStyle = n % 2 === 0 ? '#ff2a85' : '#ffffff';
+                ctx.fillRect(cx - 38, fy, 6, 6);
+                ctx.fillStyle = n % 2 === 0 ? '#ffffff' : '#ff2a85';
+                ctx.fillRect(cx + 32, fy, 6, 6);
             }
 
             // 4. GRAND STONE STAIRCASE WITH ROYAL-CRIMSON WEDDING AISLE CARPET UP THE HILL
-            const stairTopY = 206;
-            const stairBotY = 362;
             const numSteps = 12;
             for (let i = 0; i < numSteps; i++) {
                 const t = i / (numSteps - 1);
@@ -1086,6 +1283,10 @@ let outfitClock = 0;
                 ctx.fillRect(rx - 3, sy + 2, rw + 6, 11);
                 ctx.fillStyle = '#be123c';
                 ctx.fillRect(rx, sy + 2, rw, 11);
+                ctx.fillStyle = '#e11d48';
+                ctx.fillRect(rx, sy + 2, rw, 3);                         // pile catching the light
+                ctx.fillStyle = 'rgba(15,23,42,0.2)';
+                ctx.fillRect(sx, sy + 10, sw, 3);                        // shadow under each tread
 
                 // White Stone Balustrades & Candle Lanterns
                 ctx.fillStyle = '#ffffff';
@@ -1100,6 +1301,58 @@ let outfitClock = 0;
                     ctx.fillRect(sx + sw + 1, sy - 20, 4, 8);
                 }
             }
+
+        }
+
+        export function renderChurchHill() {
+            const entry = stageCanvas('churchHillCanvas');
+            if (!entry) return;
+            const { c, ctx } = entry;
+            const W = c.width, H = c.height;
+            const cx = W * 0.5;
+            const { chY, stairTopY, stairBotY } = CHURCH;
+            const tick = gameState.tick;
+            ctx.clearRect(0, 0, W, H);
+            ctx.textAlign = 'center';
+
+            gameState.churchKissBoostTimer = Math.max(0, gameState.churchKissBoostTimer - gameState.dtf);
+
+            // 1. Pine Trees & Glowing Fairy Lights on the Church Hill
+            [42, 96, 518, 574].forEach((px, idx) => {
+                const py = 112 + (idx % 2) * 16;
+                drawPixelPine(ctx, px + 18, py + 104, 104, '#059669', '#065f46', '#1e1b4b');
+                const col = (tick + idx * 7) % 20 < 10 ? '#fde047' : '#f472b6';
+                [[14, 34], [22, 54], [8, 72]].forEach(([dx, dy]) => {
+                    lampGlow(ctx, px + dx + 2, py + dy + 2, 5, col, 0.3);
+                    ctx.fillStyle = col;
+                    ctx.fillRect(px + dx, py + dy, 4, 4);
+                });
+            });
+
+            // 2-3. Hill & bell tower, then the swinging golden wedding bell, then the nave & stairs in front of it
+            ctx.drawImage(staticLayer('church:back', W, H, g => paintChurchBack(g, W)), 0, 0);
+            const bellSwing = Math.sin(tick * 0.16) * 6;
+            ctx.fillStyle = '#facc15';
+            ctx.fillRect(cx - 10 + bellSwing, 32, 20, 16);
+            ctx.fillStyle = '#fef08a';
+            ctx.fillRect(cx - 8 + bellSwing, 34, 4, 10);
+            ctx.fillStyle = '#ca8a04';
+            ctx.fillRect(cx - 13 + bellSwing, 46, 26, 5);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(cx - 3 + bellSwing * 1.3, 51, 6, 4);
+            ctx.drawImage(staticLayer('church:front', W, H, g => paintChurchFront(g, W)), 0, 0);
+
+            // Sanctuary light spilling from the doors, stained glass & stair lanterns
+            const pulse = 0.16 + Math.sin(tick * 0.09) * 0.05;
+            lampGlow(ctx, cx, chY + 138, 30, '#fef08a', pulse);
+            lampGlow(ctx, cx, chY + 70, 22, '#fb7185', pulse * 0.7);
+            [0, 5, 11].forEach((i, k) => {
+                const t = i / 11;
+                const sy = stairTopY + t * (stairBotY - stairTopY - 12), sw = 104 + t * 76, sx = cx - sw * 0.5;
+                const a = 0.3 + Math.sin(tick * 0.17 + k * 2) * 0.08;
+                lampGlow(ctx, Math.round(sx - 3), Math.round(sy - 16), 10, '#fde047', a);
+                lampGlow(ctx, Math.round(sx + sw + 3), Math.round(sy - 16), 10, '#fde047', a);
+            });
 
             // 5. ANIMATE JERO, VIAH & THEIR 3 DOGS CLIMBING THE CHURCH STAIRS & SHARING THEIR ROMANTIC KISS!
             const prog = Math.max(0.05, gameState.churchClimbProgress);

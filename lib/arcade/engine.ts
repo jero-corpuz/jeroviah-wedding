@@ -22,7 +22,8 @@ import {
   renderStadium,
   renderChurchHill,
   renderTeachersCampHill,
-  renderPortraitsAndDioramas
+  renderPortraitsAndDioramas,
+  invalidateStaticLayers
 } from './dioramas';
 
 const TOTAL_STAGES = 8;
@@ -306,6 +307,7 @@ let edgeHintTimer = null;
             if (!canvas) return;
             const { ctx, W, H } = fitCanvasToBox(canvas);
             ctx.clearRect(0, 0, W, H);
+            ctx.textAlign = 'center';
             // Scale unit: 1 at the original desktop size, smaller on phones
             const u = Math.max(0.45, Math.min(1, H / 300, W / 560));
 
@@ -372,9 +374,7 @@ let edgeHintTimer = null;
                 const px = pop.xRatio * W;
                 const py = pop.yRatio * H;
                 const size = Math.max(8, Math.min(14, Math.floor((W - 24) / (pop.text.length * 1.05))));
-                ctx.save();
                 ctx.font = `bold ${size}px "Press Start 2P", monospace`;
-                ctx.textAlign = 'center';
                 ctx.fillStyle = '#000000';
                 ctx.fillText(pop.text, px + 3, py + 3);
                 ctx.fillStyle = pop.color || '#ef4444';
@@ -387,7 +387,6 @@ let edgeHintTimer = null;
                     ctx.fillStyle = '#fde047';
                     ctx.fillText(pop.sub, px, py + sub + 6);
                 }
-                ctx.restore();
                 if (pop.life <= 0) gameState.combatPopups.splice(i, 1);
             }
 
@@ -420,7 +419,7 @@ let edgeHintTimer = null;
             if (Math.abs(wp - 3) < 1.05) renderStadium();
             if (Math.abs(wp - 4) < 1.05) renderChurchHill();
             if (Math.abs(wp - 5) < 1.05) renderTeachersCampHill();
-            requestAnimationFrame(animateLoop);
+            animFrameId = requestAnimationFrame(animateLoop);
         }
 
         function cacheDom() {
@@ -446,6 +445,7 @@ let isArcadeRunning = false;
 let boundResize = null;
 let boundOrientation = null;
 let boundClickHandler = null;
+let boundFontsLoaded = null;
 
 export function initArcade() {
     if (typeof window === 'undefined') return;
@@ -484,8 +484,11 @@ export function initArcade() {
     document.addEventListener('click', boundClickHandler);
 
     animFrameId = requestAnimationFrame(animateLoop);
-    if (document.fonts && document.fonts.ready) {
-        document.fonts.ready.then(renderPortraitsAndDioramas);
+    // Cached scenery contains pixel-font text: repaint it whenever a web font finishes loading
+    if (document.fonts) {
+        boundFontsLoaded = invalidateStaticLayers;
+        document.fonts.ready?.then(() => { invalidateStaticLayers(); renderPortraitsAndDioramas(); });
+        document.fonts.addEventListener?.('loadingdone', boundFontsLoaded);
     }
 }
 
@@ -503,6 +506,7 @@ export function destroyArcade() {
         window.removeEventListener('touchend', handleTouchEndEvent);
     }
     if (boundClickHandler) document.removeEventListener('click', boundClickHandler);
+    if (boundFontsLoaded && document.fonts) document.fonts.removeEventListener?.('loadingdone', boundFontsLoaded);
 }
 
 export { updateCountdown, handleFloorCanvasClick };
